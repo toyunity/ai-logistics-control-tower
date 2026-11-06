@@ -1,0 +1,6 @@
+spring.ai.model:
+  chat: none
+  embedding: none
+consult:
+  embedding-index: demo-char-bigram
+  similarity-threshold: 0.15   # 측정값: 맞는 질문 최저 0.154, 무관 질문 대부분 0.148 이하. 표현이 겹치는 무관 질문은 통과할 수 있다
