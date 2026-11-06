@@ -22,7 +22,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -31,6 +34,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import reactor.core.publisher.Flux;
 
 @WebMvcTest(ChatController.class)
+@ExtendWith(OutputCaptureExtension.class)
 class ChatControllerTest {
 
     private static final UUID ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -112,6 +116,17 @@ class ChatControllerTest {
     @Test
     void malformedJsonReturns400() throws Exception {
         assertRejected("{\"message\":");
+    }
+
+    @Test
+    void rejectedInputIsNotLogged(CapturedOutput output) throws Exception {
+        String marker = "REJECTED-INPUT-MARKER";
+
+        assertRejected("{\"message\":\"" + marker + "a".repeat(2001) + "\"}");
+        assertRejected("{\"conversationId\":\"" + marker + "\",\"message\":\"hi\"}");
+        assertRejected("{\"message\":\"" + marker + "\"");
+
+        assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
     }
 
     private ResultActions streamOk(String body) throws Exception {

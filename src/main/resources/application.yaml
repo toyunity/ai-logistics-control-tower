@@ -22,6 +22,7 @@ spring:
       id-type: TEXT                 # 기본값 UUID이면 "refund-policy" 같은 ID가 실패한다
       dimensions: 1536
     chat.memory.repository.jdbc.initialize-schema: always
+logging.level.org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR   # WARN은 거부된 사용자 입력을 그대로 남긴다
 consult:
   chat-model: claude-opus-5-5
   rewrite-model: claude-opus-5-5    # 지연 절감 수단: 측정 후 claude-haiku-5-5
