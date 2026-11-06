@@ -34,6 +34,9 @@ public class ChatService {
         this.props = props;
     }
 
+    // ponytail: a client disconnect cancels this Flux but not the upstream HTTP call, so an abandoned
+    // answer keeps running up to consult.max-tokens or spring.ai.anthropic.timeout. Upgrade when Spring AI
+    // propagates cancellation, or replace it with a direct SDK streaming call that closes the response.
     public Flux<ChatEvent> stream(UUID id, String message) {
         return Flux.defer(() -> {
             var sourcesSent = new AtomicBoolean();

@@ -6,7 +6,7 @@ FAQ를 근거로 답하는 고객 상담 챗봇입니다. Java 25, Spring Boot 4
 
 ## 아직 검증하지 않은 것
 
-작성 시점에 API 키가 없어 아래 항목은 실행하지 못했습니다. 자동 테스트는 가짜 모델로 통과했을 뿐이며, 실제 API에서 동작한다는 보장은 아닙니다.
+작성 시점에 API 키가 없어 아래 항목은 실행하지 못했습니다. 자동 테스트는 가짜 모델과 로컬 스텁으로 통과했을 뿐이며, 실제 API에서 동작한다는 보장은 아닙니다.
 
 - **실제 Claude, OpenAI 호출.** `claude-opus-5-5` 모델과 effort `low` 옵션 조합이 API에서 수락되는지, 실제 임베딩으로 기동과 검색이 되는지 확인되지 않았습니다.
 - **검색 임계값 보정.** `consult.similarity-threshold`의 `0.4`는 측정값이 아닌 초기값입니다.
@@ -42,7 +42,7 @@ ANTHROPIC_API_KEY=... OPENAI_API_KEY=... ./gradlew bootRun
 
 http://localhost:8080 에서 채팅 페이지를 엽니다.
 
-키가 없어도 설정 단계에서 바로 실패하지는 않으니 주의하세요. 임베딩할 FAQ가 있으면(첫 기동이거나 FAQ를 수정한 경우) OpenAI 호출이 401로 실패해 기동이 중단됩니다. 임베딩할 FAQ가 없으면 `OPENAI_API_KEY` 문제도 기동 때 드러나지 않습니다. 기동할 때 Claude는 호출하지 않으므로 두 키의 문제 모두 첫 질문의 `UPSTREAM` 오류로 드러납니다.
+키 환경 변수가 없으면 기동이 `Could not resolve placeholder 'ANTHROPIC_API_KEY'`(또는 `'OPENAI_API_KEY'`)로 실패합니다(`ApiKeyGuardTest`로 확인). 값이 있는지만 확인하므로 틀린 키는 잡지 못합니다. 틀린 키가 실제로 어떻게 드러나는지는 API 키가 없어 관찰하지 못했습니다. 코드상으로는 임베딩할 FAQ가 있을 때 OpenAI 호출 실패로 기동이 중단되고, 그 외에는 첫 질문의 `UPSTREAM` 오류로 드러날 것입니다.
 
 DB 접속 정보는 `DB_URL`, `DB_USER`, `DB_PASSWORD`로 바꿀 수 있고, 기본값은 `compose.yaml`과 같습니다.
 
@@ -52,7 +52,7 @@ DB 접속 정보는 `DB_URL`, `DB_USER`, `DB_PASSWORD`로 바꿀 수 있고, 기
 ./gradlew test
 ```
 
-Docker 데몬이 필요합니다. `*IT` 테스트는 Docker가 없으면 건너뛰지 않고 실패합니다. 가짜 모델을 쓰므로 비용이 들지 않습니다.
+Docker 데몬이 필요합니다. `*IT` 테스트는 Docker가 없으면 건너뛰지 않고 실패합니다. 가짜 모델이나 로컬 스텁을 쓰므로 비용이 들지 않습니다.
 
 `LiveApiIT`만 예외입니다. 키 2개가 모두 있을 때만 실제 API를 호출하고, 하나라도 없으면 건너뜁니다. 따라서 키가 환경 변수에 있는 셸에서 `./gradlew test`를 실행하면 비용이 발생합니다.
 
@@ -76,11 +76,15 @@ POST이므로 브라우저에서는 `EventSource`가 아니라 `fetch`와 stream
 
 스트림은 `done` 또는 `error` 중 정확히 하나로 끝납니다. `error.message`에는 예외 내용을 넣지 않습니다.
 
-첫 청크까지의 대기(질문 재작성, 임베딩 검색, 첫 토큰 포함)나 청크 사이의 침묵이 `consult.stream-idle-timeout`(기본 60초)을 넘으면 스트림은 `UPSTREAM` 오류로 끝납니다. 이 값은 대기와 침묵만 제한하고 답변의 총 길이는 제한하지 않습니다.
+첫 청크까지의 대기(질문 재작성, 임베딩 검색, 첫 토큰 포함)나 청크 사이의 침묵이 `consult.stream-idle-timeout`(기본 60초)을 넘으면 스트림은 `UPSTREAM` 오류로 끝납니다. 이 값은 대기와 침묵만 제한합니다. 응답 전체 시간은 `spring.ai.anthropic.timeout`(10분)으로 제한되어, 넘으면 역시 `UPSTREAM` 오류로 끝납니다.
+
+클라이언트가 연결을 끊어도 Claude로의 업스트림 호출은 멈추지 않습니다. 버려진 답변도 `consult.max-tokens`(8000)나 위 10분 한도에 닿을 때까지 생성되고 비용이 청구됩니다. 답변 길이와 비용 상한을 함께 정하는 값이므로 `consult.max-tokens`를 올릴 때 이 점을 고려하세요.
 
 ## FAQ 수정
 
-`src/main/resources/faq/faqs.json`을 수정한 뒤 재시작합니다. 기동할 때 바뀐 항목만 다시 임베딩하고, 파일에서 사라진 항목은 삭제합니다.
+`src/main/resources/faq/faqs.json`을 수정한 뒤 재시작합니다. 기동할 때 바뀐 항목만 다시 임베딩하고, 파일에서 사라진 항목은 삭제합니다. 파일이 빈 배열(`[]`)이면 기존 데이터를 지우지 않고 기동이 실패합니다.
+
+임베딩에는 질문과 답변 텍스트만 넣습니다. 이 설정(`spring.ai.openai.embedding.metadata-mode: none`) 이전에 만든 `vector_store` 행이 있으면 아래 "임베딩 모델 교체"의 명령으로 테이블을 지우세요. 해시가 그대로라 재임베딩되지 않습니다.
 
 ## 임베딩 모델 교체
 

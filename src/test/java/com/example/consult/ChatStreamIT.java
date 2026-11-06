@@ -27,12 +27,15 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,6 +44,7 @@ import reactor.core.publisher.Flux;
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Import({TestInfraConfig.class, FakeAiConfig.class})
 @Timeout(30)
+@ExtendWith(OutputCaptureExtension.class)
 class ChatStreamIT {
 
     // HTTP/1.1 so that closing the body is a TCP close Tomcat can see, not an h2c stream reset.
@@ -159,6 +163,16 @@ class ChatStreamIT {
         assertThat(events.getLast().data())
                 .contains("\"code\":\"UPSTREAM\"")
                 .doesNotContain("upstream secret");
+    }
+
+    @Test
+    void inputRejectedByTheDatabaseIsNotLogged(CapturedOutput output) throws Exception {
+        String marker = "DB-REJECTED-INPUT-MARKER";
+
+        // NUL passes validation, then the chat memory insert fails.
+        assertThat(names(chat(marker + " \\u0000 뒤"))).endsWith("error");
+
+        assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
     }
 
     private record SseEvent(String name, String data) {}

@@ -86,6 +86,16 @@ class FaqSyncIT {
     }
 
     @Test
+    void emptyListFailsFastAndKeepsExistingRows() {
+        faqSync.sync(List.of(a, b));
+
+        assertThatThrownBy(() -> faqSync.sync(List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("faqs.json is empty");
+        assertThat(rows()).isEqualTo(2);
+    }
+
+    @Test
     void blankFieldFailsFast() {
         assertThatThrownBy(() -> faqSync.sync(List.of(new FaqEntry("c", "배송", " ", "답"))))
                 .isInstanceOf(IllegalArgumentException.class);

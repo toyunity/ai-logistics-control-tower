@@ -42,6 +42,9 @@ public class FaqSync implements ApplicationRunner {
 
     // Concurrent instance startup is idempotent via upsert, so no lock.
     public void sync(List<FaqEntry> entries) {
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("faqs.json is empty");
+        }
         Set<String> ids = new HashSet<>();
         for (FaqEntry e : entries) {
             if (isBlank(e.id()) || isBlank(e.category()) || isBlank(e.question()) || isBlank(e.answer())) {
