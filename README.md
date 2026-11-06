@@ -76,7 +76,7 @@ POST이므로 브라우저에서는 `EventSource`가 아니라 `fetch`와 stream
 
 스트림은 `done` 또는 `error` 중 정확히 하나로 끝납니다. `error.message`에는 예외 내용을 넣지 않습니다.
 
-모델 청크 사이의 침묵이 `consult.stream-idle-timeout`(기본 60초)을 넘으면 스트림은 `UPSTREAM` 오류로 끝납니다. 이 값은 침묵만 제한하고 답변의 총 길이는 제한하지 않습니다.
+첫 청크까지의 대기(질문 재작성, 임베딩 검색, 첫 토큰 포함)나 청크 사이의 침묵이 `consult.stream-idle-timeout`(기본 60초)을 넘으면 스트림은 `UPSTREAM` 오류로 끝납니다. 이 값은 대기와 침묵만 제한하고 답변의 총 길이는 제한하지 않습니다.
 
 ## FAQ 수정
 

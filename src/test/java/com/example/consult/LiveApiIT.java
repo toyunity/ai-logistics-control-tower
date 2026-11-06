@@ -77,8 +77,13 @@ class LiveApiIT {
         UUID id = UUID.randomUUID();
         assertThat(chat(id, "환불은 며칠 안에 가능한가요?")).contains("event:done");
 
-        // Names no topic, so refund-policy can only come from the rewrite using the first turn.
-        String body = chat(id, "그 기간이 지나면 어떻게 되나요?");
+        // RagConfig falls back to the raw query if the rewrite fails, so the raw query must not find the FAQ alone.
+        String followUp = "그 기간이 지나면 어떻게 되나요?";
+        assertThat(search(followUp, props.similarityThreshold()))
+                .as("raw follow-up already finds refund-policy, so pick a question that proves the rewrite")
+                .noneMatch(d -> d.getId().equals("refund-policy"));
+
+        String body = chat(id, followUp);
 
         assertThat(body).contains("event:done", "\"id\":\"refund-policy\"").doesNotContain("event:error");
     }

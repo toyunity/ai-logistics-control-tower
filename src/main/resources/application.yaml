@@ -28,4 +28,4 @@ consult:
   max-tokens: 16000
   top-k: 3
   similarity-threshold: 0.4         # Task 7 평가로 보정한다
-  stream-idle-timeout: 60s          # 청크 사이 침묵 한도. 총 길이는 제한하지 않는다
+  stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 길이는 제한하지 않는다
