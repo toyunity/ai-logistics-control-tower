@@ -1,0 +1,13 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: consult
+      POSTGRES_DB: consult
+      POSTGRES_PASSWORD: consult
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
