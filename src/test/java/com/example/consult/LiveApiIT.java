@@ -33,7 +33,6 @@ import org.springframework.context.annotation.Import;
 @Timeout(180)
 class LiveApiIT {
 
-    // FAQ 문구를 되도록 피해 바꿔 쓴 질문.
     private static final List<Map.Entry<String, String>> PARAPHRASES = List.of(
             Map.entry("구매한 물건을 돌려보내고 돈을 돌려받고 싶어요", "refund-policy"),
             Map.entry("사이즈가 안 맞아서 다른 걸로 바꾸고 싶은데 어떻게 하죠?", "exchange-policy"),

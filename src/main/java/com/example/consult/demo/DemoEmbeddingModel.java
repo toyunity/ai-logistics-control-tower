@@ -59,7 +59,7 @@ class DemoEmbeddingModel implements EmbeddingModel {
         for (float x : v) {
             sum += x * x;
         }
-        // 두 글자 미만이면 영벡터로 둔다. 나누면 NaN이 되어 pgvector가 거부한다.
+        // 바이그램이 하나도 없으면 영벡터로 둔다. 나누면 NaN이 되어 pgvector가 거부한다.
         if (sum > 0) {
             float norm = (float) Math.sqrt(sum);
             for (int i = 0; i < v.length; i++) {

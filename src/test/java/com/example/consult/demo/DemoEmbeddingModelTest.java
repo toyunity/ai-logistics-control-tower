@@ -59,7 +59,7 @@ class DemoEmbeddingModelTest {
             "아파트 가격은 얼마인가요?",
             "고마워요");
 
-    // 알려진 오답. 키워드 유사도의 한계라 임계값을 넘어 엉뚱한 FAQ로 답한다. 고치면 README도 함께 고친다.
+    // 키워드 유사도의 한계로 남은 오답. 고치면 README도 함께 고친다.
     private static final List<String> KNOWN_LEAKS = List.of(
             "감사합니다",
             "커피는 얼마나 마셔야 하나요?",

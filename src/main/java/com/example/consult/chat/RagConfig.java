@@ -95,7 +95,7 @@ public class RagConfig {
                 .build();
     }
 
-    // 이력에 빈 assistant 메시지가 있으면 Messages API가 이후 턴을 모두 거부한다고 보고 걸러 낸다. 실제 API로 재현하지는 못했다.
+    // 빈 assistant 메시지가 이력에 남으면 이후 턴이 API에서 거부될 수 있어 저장하지 않는다. 실제 API로 재현하지는 못했다.
     private record SkipBlankAssistant(ChatMemory delegate) implements ChatMemory {
 
         @Override

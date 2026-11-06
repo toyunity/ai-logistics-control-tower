@@ -95,7 +95,6 @@ class ChatStreamIT {
         assertThat(memoryRows("USER")).isEqualTo(2);
         assertThat(memoryRows("ASSISTANT")).isEqualTo(2);
 
-        // 재작성 호출이 먼저라 마지막 프롬프트가 스트리밍 모델로 간 것이다.
         List<Message> sent = chatModel.prompts().getLast().getInstructions();
         assertThat(textsOf(sent, MessageType.USER)).anyMatch(t -> t.contains("첫째 질문 ABC"));
         assertThat(textsOf(sent, MessageType.ASSISTANT)).contains("첫째 답변 XYZ");
@@ -153,7 +152,6 @@ class ChatStreamIT {
         HttpResponse<Stream<String>> response = post("질문", BodyHandlers.ofLines());
         assertThat(response.statusCode()).isEqualTo(200);
 
-        // IOException 없이 끝까지 읽히는 것이 정상 종료 확인이다.
         List<SseEvent> events;
         try (var lines = response.body()) {
             events = parse(lines.toList());
@@ -169,7 +167,6 @@ class ChatStreamIT {
     void inputRejectedByTheDatabaseIsNotLogged(CapturedOutput output) throws Exception {
         String marker = "DB-REJECTED-INPUT-MARKER";
 
-        // NUL은 검증을 통과한 뒤 대화 기록 저장에서 실패한다.
         assertThat(names(chat(marker + " \\u0000 뒤"))).endsWith("error");
 
         assertThat(output.getOut() + output.getErr()).doesNotContain(marker);

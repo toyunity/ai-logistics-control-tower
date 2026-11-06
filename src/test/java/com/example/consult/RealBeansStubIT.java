@@ -132,7 +132,6 @@ class RealBeansStubIT {
 
     @Test
     void faqEmbeddingsCarryOnlyQuestionAndAnswer() {
-        // 기동할 때 FaqSync가 이 스텁으로 임베딩을 요청했다.
         JsonNode input = JSON.readTree(EMBEDDINGS.getFirst().body()).get("input");
         assertThat(input.get(0).asString()).contains("Q: 환불은 어떻게 하나요?\nA: 상품 수령 후 7일 이내");
         assertThat(input.toString()).doesNotContain("hash:", "category:");
@@ -162,7 +161,7 @@ class RealBeansStubIT {
         for (String rejectedByApi : List.of("temperature", "top_p", "top_k", "thinking")) {
             assertThat(body.has(rejectedByApi)).as(rejectedByApi).isFalse();
         }
-        // SDK 기본 타임아웃 60초면 긴 답변이 잘린다. 실제 적용값은 이 헤더로 알 수 있다.
+        // 적용된 타임아웃은 이 헤더로만 확인할 수 있다.
         assertThat(request.headers().getFirst("X-stainless-timeout")).isEqualTo("600");
     }
 }

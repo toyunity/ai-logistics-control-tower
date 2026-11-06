@@ -92,7 +92,7 @@ public class FaqSync implements ApplicationRunner {
     private String hash(FaqEntry e) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            // 필드 경계를 밀어 해시가 충돌하는 일이 없도록 NUL로 구분한다
+            // 필드 경계가 밀려도 해시가 같아지지 않게 NUL로 구분한다
             String joined = e.question() + '\u0000' + e.answer() + '\u0000' + e.category()
                     + '\u0000' + props.embeddingIndex();
             return java.util.HexFormat.of().formatHex(md.digest(joined.getBytes(StandardCharsets.UTF_8)));
