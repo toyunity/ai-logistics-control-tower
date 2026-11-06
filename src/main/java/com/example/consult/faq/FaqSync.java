@@ -1,0 +1,96 @@
+package com.example.consult.faq;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
+
+@Component
+public class FaqSync implements ApplicationRunner {
+
+    private final VectorStore vectorStore;
+    private final JdbcTemplate jdbc;
+    private final JsonMapper jsonMapper;
+
+    public FaqSync(VectorStore vectorStore, JdbcTemplate jdbc, JsonMapper jsonMapper) {
+        this.vectorStore = vectorStore;
+        this.jdbc = jdbc;
+        this.jsonMapper = jsonMapper;
+    }
+
+    /** Embedding failure propagates and fails startup: better than answering from stale FAQs. */
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        try (InputStream in = new ClassPathResource("faq/faqs.json").getInputStream()) {
+            sync(jsonMapper.readValue(in, new TypeReference<List<FaqEntry>>() {}));
+        }
+    }
+
+    // Concurrent instance startup is idempotent via upsert, so no lock.
+    public void sync(List<FaqEntry> entries) {
+        Set<String> ids = new HashSet<>();
+        for (FaqEntry e : entries) {
+            if (isBlank(e.id()) || isBlank(e.category()) || isBlank(e.question()) || isBlank(e.answer())) {
+                throw new IllegalArgumentException("FAQ fields must not be blank: " + e.id());
+            }
+            if (!ids.add(e.id())) {
+                throw new IllegalArgumentException("Duplicate FAQ id: " + e.id());
+            }
+        }
+
+        Map<String, String> existing = new HashMap<>();
+        jdbc.query("select id, metadata->>'hash' from vector_store", rs -> {
+            existing.put(rs.getString(1), rs.getString(2));
+        });
+
+        List<Document> changed = entries.stream()
+                .filter(e -> !hash(e).equals(existing.get(e.id())))
+                .map(e -> Document.builder()
+                        .id(e.id())
+                        .text("Q: " + e.question() + "\nA: " + e.answer())
+                        .metadata(Map.of(
+                                "question", e.question(),
+                                "answer", e.answer(),
+                                "category", e.category(),
+                                "hash", hash(e)))
+                        .build())
+                .toList();
+        if (!changed.isEmpty()) {
+            vectorStore.add(changed);
+        }
+
+        List<String> removed = existing.keySet().stream().filter(id -> !ids.contains(id)).toList();
+        if (!removed.isEmpty()) {
+            vectorStore.delete(removed);
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private static String hash(FaqEntry e) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            // \u0000 separators so field boundaries can't be shifted to collide
+            String joined = e.question() + '\u0000' + e.answer() + '\u0000' + e.category();
+            return java.util.HexFormat.of().formatHex(md.digest(joined.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+}
