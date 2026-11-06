@@ -6,6 +6,7 @@ import com.example.consult.chat.ChatEvent.Failed;
 import com.example.consult.chat.ChatEvent.Meta;
 import com.example.consult.chat.ChatEvent.Source;
 import com.example.consult.chat.ChatEvent.Sources;
+import com.example.consult.ConsultProperties;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -26,9 +27,11 @@ public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     private final ChatClient chatClient;
+    private final ConsultProperties props;
 
-    public ChatService(ChatClient chatClient) {
+    public ChatService(ChatClient chatClient, ConsultProperties props) {
         this.chatClient = chatClient;
+        this.props = props;
     }
 
     public Flux<ChatEvent> stream(UUID id, String message) {
@@ -39,6 +42,7 @@ public class ChatService {
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id.toString()))
                     .stream()
                     .chatClientResponse()
+                    .timeout(props.streamIdleTimeout()) // per chunk: limits silence, not answer length
                     .concatMapIterable(r -> toEvents(r, sourcesSent));
             return Flux.<ChatEvent>just(new Meta(id))
                     .concatWith(body)

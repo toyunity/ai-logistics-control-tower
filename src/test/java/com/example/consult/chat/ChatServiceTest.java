@@ -15,6 +15,7 @@ import com.example.consult.chat.ChatEvent.Source;
 import com.example.consult.chat.ChatEvent.Sources;
 import com.example.consult.support.FakeChatModel;
 import com.example.consult.support.FakeEmbeddingModel;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -53,13 +54,18 @@ class ChatServiceTest {
     }
 
     private ChatService service(VectorStore store) {
+        return service(store, Duration.ofSeconds(30));
+    }
+
+    private ChatService service(VectorStore store, Duration idleTimeout) {
+        var props = new ConsultProperties("chat-model", "rewrite-model", 1000, 3, 0.5, idleTimeout);
         ChatClient client = new RagConfig().consultChatClient(
                 ChatClient.builder(model),
                 ChatClient.builder(model),
                 MessageWindowChatMemory.builder().chatMemoryRepository(repository).build(),
                 store,
-                new ConsultProperties("chat-model", "rewrite-model", 1000, 3, 0.5));
-        return new ChatService(client);
+                props);
+        return new ChatService(client, props);
     }
 
     private List<ChatEvent> run(String message) {
@@ -193,6 +199,34 @@ class ChatServiceTest {
         Failed failed = (Failed) events.get(events.size() - 1);
         assertThat(failed.code()).isEqualTo("UPSTREAM");
         assertThat(failed.message()).doesNotContain("secret");
+    }
+
+    @Test
+    void stalledStreamEndsWithFailed() {
+        model.enqueueStream(Flux.never());
+
+        List<ChatEvent> events = service(faqStore(), Duration.ofMillis(200))
+                .stream(id, "환불 되나요")
+                .collectList()
+                .block(Duration.ofSeconds(5));
+
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0)).isEqualTo(new Meta(id));
+        assertThat(((Failed) events.get(1)).code()).isEqualTo("UPSTREAM");
+    }
+
+    @Test
+    void slowButSteadyStreamIsNotCut() {
+        // Spacing is a tenth of the timeout, and the 750ms total is longer than the timeout.
+        model.enqueueStream(Flux.range(1, 15).delayElements(Duration.ofMillis(50)).map(i -> text("조각" + i)));
+
+        List<ChatEvent> events = service(faqStore(), Duration.ofMillis(500))
+                .stream(id, "환불 되나요")
+                .collectList()
+                .block(Duration.ofSeconds(5));
+
+        assertThat(events).last().isEqualTo(new Done());
+        assertThat(events).filteredOn(Delta.class::isInstance).hasSize(15);
     }
 
     @Test
