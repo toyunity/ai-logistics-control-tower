@@ -85,7 +85,7 @@ class ChatControllerTest {
 
         streamOk("{\"message\":\"hi\"}");
 
-        verify(service).stream(any(UUID.class), eq("hi")); // any(UUID.class) does not match null
+        verify(service).stream(any(UUID.class), eq("hi")); // any(UUID.class)는 null에 매치되지 않는다
     }
 
     @Test

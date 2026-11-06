@@ -32,7 +32,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Real AnthropicChatModel and OpenAI embedding beans against a local stub: catches what the fakes hide. */
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Import(TestInfraConfig.class)
 @Timeout(60)
@@ -133,7 +132,6 @@ class RealBeansStubIT {
 
     @Test
     void faqEmbeddingsCarryOnlyQuestionAndAnswer() {
-        // FaqSync embedded the seed FAQs against the stub during startup.
         JsonNode input = JSON.readTree(EMBEDDINGS.getFirst().body()).get("input");
         assertThat(input.get(0).asString()).contains("Q: 환불은 어떻게 하나요?\nA: 상품 수령 후 7일 이내");
         assertThat(input.toString()).doesNotContain("hash:", "category:");
@@ -163,7 +161,7 @@ class RealBeansStubIT {
         for (String rejectedByApi : List.of("temperature", "top_p", "top_k", "thinking")) {
             assertThat(body.has(rejectedByApi)).as(rejectedByApi).isFalse();
         }
-        // The SDK's default 60s call timeout cuts long answers; the header reports the effective value.
+        // 적용된 타임아웃은 이 헤더로만 확인할 수 있다.
         assertThat(request.headers().getFirst("X-stainless-timeout")).isEqualTo("600");
     }
 }

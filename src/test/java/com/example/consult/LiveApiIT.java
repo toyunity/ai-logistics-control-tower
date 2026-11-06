@@ -25,7 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 
-/** Calls the real Claude and OpenAI APIs, so it costs a little money and runs only with both keys set. */
+// 실제 API를 호출해 비용이 든다. 키가 둘 다 있을 때만 돈다.
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Import(TestInfraConfig.class)
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
@@ -33,7 +33,6 @@ import org.springframework.context.annotation.Import;
 @Timeout(180)
 class LiveApiIT {
 
-    /** One reworded question per entry in faqs.json, avoiding the entry's own wording where possible. */
     private static final List<Map.Entry<String, String>> PARAPHRASES = List.of(
             Map.entry("구매한 물건을 돌려보내고 돈을 돌려받고 싶어요", "refund-policy"),
             Map.entry("사이즈가 안 맞아서 다른 걸로 바꾸고 싶은데 어떻게 하죠?", "exchange-policy"),
@@ -77,7 +76,7 @@ class LiveApiIT {
         UUID id = UUID.randomUUID();
         assertThat(chat(id, "환불은 며칠 안에 가능한가요?")).contains("event:done");
 
-        // RagConfig falls back to the raw query if the rewrite fails, so the raw query must not find the FAQ alone.
+        // 재작성이 실패하면 원래 질문으로 검색하므로, 원래 질문만으로는 FAQ가 잡히지 않아야 한다.
         String followUp = "그 기간이 지나면 어떻게 되나요?";
         assertThat(search(followUp, props.similarityThreshold()))
                 .as("raw follow-up already finds refund-policy, so pick a question that proves the rewrite")
@@ -88,7 +87,7 @@ class LiveApiIT {
         assertThat(body).contains("event:done", "\"id\":\"refund-policy\"").doesNotContain("event:error");
     }
 
-    /** History ends in USER after a disconnect, or after a blank reply that memory dropped. */
+    // 연결이 끊기거나 빈 답변이 저장되지 않으면 이력이 USER로 끝난다.
     @Test
     void consecutiveUserMessagesAccepted() throws Exception {
         UUID id = UUID.randomUUID();

@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoCon
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-/** Loads the real application.yaml, not the test properties with their fallback keys. */
+// 대체 키가 있는 테스트 설정이 아니라 실제 application.yaml을 읽는다.
 @DisabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
 @DisabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 class ApiKeyGuardTest {
