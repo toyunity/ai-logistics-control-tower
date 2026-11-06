@@ -1,5 +1,7 @@
 # AI 상담 챗봇
 
+[![CI](https://github.com/toyunity/chat/actions/workflows/ci.yml/badge.svg)](https://github.com/toyunity/chat/actions/workflows/ci.yml)
+
 FAQ를 근거로 답하는 고객 상담 챗봇입니다. Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었고, 답변은 Claude, 임베딩은 OpenAI, 벡터 저장과 대화 기록은 PostgreSQL(pgvector)을 씁니다. API 키 없이 검색과 SSE 스트리밍을 확인할 수 있는 데모 모드가 있습니다. 실제 Claude, OpenAI 호출은 아직 해 보지 못했습니다([검증 상태](#검증-상태) 참고).
 
 ![데모 모드에서 환불 질문에 FAQ 답변과 참고 FAQ가 표시된 채팅 화면](docs/images/chat-demo.png)
