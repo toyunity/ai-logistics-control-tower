@@ -30,6 +30,7 @@ consult:
   chat-model: claude-opus-5-5
   rewrite-model: claude-opus-5-5    # 지연 절감 수단: 측정 후 claude-haiku-5-5
   max-tokens: 8000                  # 끊긴 클라이언트의 답변 1건에 드는 비용 상한이기도 하다(README 참고)
+  embedding-index: ${spring.ai.openai.embedding.options.model}   # FAQ 해시에 포함된다. 바뀌면 전체를 다시 임베딩한다
   top-k: 3
   similarity-threshold: 0.4         # Task 7 평가로 보정한다
   stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 시간 한도는 spring.ai.anthropic.timeout

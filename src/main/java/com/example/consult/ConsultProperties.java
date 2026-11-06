@@ -10,4 +10,5 @@ public record ConsultProperties(
         int maxTokens,
         int topK,
         double similarityThreshold,
-        Duration streamIdleTimeout) {}
+        Duration streamIdleTimeout,
+        String embeddingIndex) {}

@@ -1,5 +1,6 @@
 package com.example.consult.faq;
 
+import com.example.consult.ConsultProperties;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -25,11 +26,13 @@ public class FaqSync implements ApplicationRunner {
     private final VectorStore vectorStore;
     private final JdbcTemplate jdbc;
     private final JsonMapper jsonMapper;
+    private final ConsultProperties props;
 
-    public FaqSync(VectorStore vectorStore, JdbcTemplate jdbc, JsonMapper jsonMapper) {
+    public FaqSync(VectorStore vectorStore, JdbcTemplate jdbc, JsonMapper jsonMapper, ConsultProperties props) {
         this.vectorStore = vectorStore;
         this.jdbc = jdbc;
         this.jsonMapper = jsonMapper;
+        this.props = props;
     }
 
     /** Embedding failure propagates and fails startup: better than answering from stale FAQs. */
@@ -86,11 +89,12 @@ public class FaqSync implements ApplicationRunner {
         return s == null || s.isBlank();
     }
 
-    private static String hash(FaqEntry e) {
+    private String hash(FaqEntry e) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             // \u0000 separators so field boundaries can't be shifted to collide
-            String joined = e.question() + '\u0000' + e.answer() + '\u0000' + e.category();
+            String joined = e.question() + '\u0000' + e.answer() + '\u0000' + e.category()
+                    + '\u0000' + props.embeddingIndex();
             return java.util.HexFormat.of().formatHex(md.digest(joined.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);

@@ -58,7 +58,7 @@ class ChatServiceTest {
     }
 
     private ChatService service(VectorStore store, Duration idleTimeout) {
-        var props = new ConsultProperties("chat-model", "rewrite-model", 1000, 3, 0.5, idleTimeout);
+        var props = new ConsultProperties("chat-model", "rewrite-model", 1000, 3, 0.5, idleTimeout, "test-index");
         ChatClient client = new RagConfig().consultChatClient(
                 ChatClient.builder(model),
                 ChatClient.builder(model),
