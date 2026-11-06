@@ -1,6 +1,6 @@
 # AI 상담 챗봇
 
-[![CI](https://github.com/toyunity/chat/actions/workflows/ci.yml/badge.svg)](https://github.com/toyunity/chat/actions/workflows/ci.yml)
+[![CI](https://github.com/toyunity/spring-ai-consult-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/toyunity/spring-ai-consult-chatbot/actions/workflows/ci.yml)
 
 FAQ를 근거로 답하는 고객 상담 챗봇입니다. Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었고, 답변은 Claude, 임베딩은 OpenAI, 벡터 저장과 대화 기록은 PostgreSQL(pgvector)을 씁니다. API 키 없이 검색과 SSE 스트리밍을 확인할 수 있는 데모 모드가 있습니다. 실제 Claude, OpenAI 호출은 아직 해 보지 못했습니다([검증 상태](#검증-상태) 참고).
 
@@ -58,7 +58,11 @@ flowchart LR
     F["FaqSync (기동 시)"] -->|"바뀐 FAQ만 임베딩"| V
 ```
 
+요청 흐름과 구성 요소는 [구조 문서](docs/architecture.md), 테스트 계층은 [테스트 전략](docs/testing.md)에 있습니다.
+
 ## 주요 설계 결정
+
+각 결정의 근거와 다시 검토할 조건은 [설계 결정 문서](docs/decisions.md)에 있습니다.
 
 - **WebFlux 대신 MVC에 `Flux` 반환.** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적습니다. MVC도 `Flux<ServerSentEvent>`를 SSE로 흘려보낼 수 있고, `ChatStreamIT`가 실제 HTTP로 이를 확인합니다.
 - **Advisor 순서는 메모리 다음 RAG.** 메모리가 먼저 돌아야 FAQ가 붙기 전의 원래 질문이 저장되고, RAG가 대화 이력을 받을 수 있습니다.
