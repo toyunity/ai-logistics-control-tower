@@ -3,6 +3,8 @@ package com.example.consult.demo;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.Embedding;
@@ -17,6 +19,11 @@ import org.springframework.stereotype.Component;
 class DemoEmbeddingModel implements EmbeddingModel {
 
     private static final int DIMENSIONS = 1536;
+    private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]+");
+    // 질문 어미가 겹치는 것만으로 무관한 질문이 FAQ에 걸리지 않게 뺀다.
+    private static final Set<String> STOP_WORDS = Set.of(
+            "어떻게", "얼마나", "하나요", "있나요", "되나요", "인가요", "해요", "어때요",
+            "싶어요", "하고", "주세요", "알려주세요", "뭐예요", "뭔가요", "언제", "어디서");
 
     @Override
     public EmbeddingResponse call(EmbeddingRequest request) {
@@ -39,10 +46,14 @@ class DemoEmbeddingModel implements EmbeddingModel {
     }
 
     private static float[] vector(String text) {
-        String s = text.replaceAll("\\s+", "");
         float[] v = new float[DIMENSIONS];
-        for (int i = 0; i + 2 <= s.length(); i++) {
-            v[bucket(s.substring(i, i + 2))]++;
+        var words = WORD.matcher(text);
+        while (words.find()) {
+            String w = words.group();
+            if (STOP_WORDS.contains(w)) continue;
+            for (int i = 0; i + 2 <= w.length(); i++) {
+                v[bucket(w.substring(i, i + 2))]++;
+            }
         }
         double sum = 0;
         for (float x : v) {

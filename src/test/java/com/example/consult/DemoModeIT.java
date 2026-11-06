@@ -45,6 +45,8 @@ import tools.jackson.databind.json.JsonMapper;
 class DemoModeIT {
 
     private static final String PREFIX = "[데모 응답 · 실제 AI 아님] ";
+    private static final String NO_MATCH = "등록된 FAQ에서 관련 내용을 찾지 못했습니다. 상담원 연결을 이용해 주세요.";
+    private static final String PASSWORD_ANSWER = "로그인 화면의 '비밀번호 찾기'에서 가입한 이메일을 입력하시면 재설정 링크를 보내드립니다. 링크는 30분간 유효합니다.";
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final AtomicInteger EXTERNAL_REQUESTS = new AtomicInteger();
     private static HttpServer stub;
@@ -77,7 +79,7 @@ class DemoModeIT {
 
     @Test
     void contextHasOnlyDemoModelsAndNoKeys() {
-        assertThat(props.embeddingIndex()).isEqualTo("demo-char-bigram");
+        assertThat(props.embeddingIndex()).isEqualTo("demo-word-bigram");
         assertThat(((ConfigurableEnvironment) ctx.getEnvironment()).getPropertySources().stream())
                 .noneMatch(source -> source.getName().contains("application.properties"));
         assertThat(ctx.getBeansOfType(AnthropicChatModel.class)).isEmpty();
@@ -120,16 +122,34 @@ class DemoModeIT {
     }
 
     @Test
-    void followUpUsesHistoryAndEndsWithDone(CapturedOutput output) throws Exception {
+    void followUpOnNewTopicAnswersFromThatTopic(CapturedOutput output) throws Exception {
         UUID id = UUID.randomUUID();
         assertThat(chat(id, "환불은 며칠 안에 가능한가요?")).contains("event:done");
 
-        String sse = chat(id, "그 기간이 지나면 어떻게 되나요?");
+        String sse = chat(id, "비밀번호를 잊어버렸어요");
 
-        assertThat(sse).contains("\"id\":\"refund-policy\"");
+        assertThat(deltaText(sse)).isEqualTo(PREFIX + PASSWORD_ANSWER);
         assertThat(eventNames(sse).getLast()).isEqualTo("event:done");
         assertThat(output).doesNotContain("query rewrite failed");
         assertThat(EXTERNAL_REQUESTS).hasValue(0);
+    }
+
+    @Test
+    void offTopicFollowUpGetsNoMatchGuidance() throws Exception {
+        UUID id = UUID.randomUUID();
+        assertThat(chat(id, "환불은 며칠 안에 가능한가요?")).contains("event:done");
+
+        String sse = chat(id, "오늘 서울 날씨 어때요?");
+
+        assertThat(sse).contains("{\"items\":[]}");
+        assertThat(deltaText(sse)).isEqualTo(PREFIX + NO_MATCH);
+    }
+
+    @Test
+    void answerArrivesInMoreThanOneDelta() throws Exception {
+        String sse = chat(UUID.randomUUID(), "환불은 며칠 안에 가능한가요?");
+
+        assertThat(eventNames(sse).stream().filter("event:delta"::equals).count()).isGreaterThan(1);
     }
 
     private String chat(UUID id, String message) throws Exception {

@@ -33,7 +33,38 @@ class DemoEmbeddingModelTest {
             "파이썬으로 정렬 알고리즘 짜는 법 알려줘",
             "김치찌개 맛있게 끓이는 법이 궁금해요",
             "임진왜란은 몇 년에 일어났나요?",
-            "강아지가 밥을 안 먹어요");
+            "강아지가 밥을 안 먹어요",
+            "안녕하세요",
+            "너는 누구야?",
+            "넌 AI야?",
+            "상담원 연결해 주세요",
+            "영업시간이 어떻게 되나요?",
+            "화성까지 가는 데 얼마나 걸리나요?",
+            "라면은 어떻게 끓이나요?",
+            "이혼은 어떻게 하나요?",
+            "자동차 할부는 얼마인가요?",
+            "서울에서 부산까지 얼마나 걸리나요?",
+            "운전면허는 어떻게 따나요?",
+            "사장님 이름이 뭐예요?",
+            "주식 투자는 어떻게 하나요?",
+            "회사 위치가 어디인가요?",
+            "다이어트는 어떻게 하나요?",
+            "비트코인 얼마인가요?",
+            "제주도 여행은 어떻게 가나요?",
+            "점심 메뉴 추천해 주세요",
+            "오늘 몇 시인가요?",
+            "노래 추천해 줘",
+            "영어 공부는 어떻게 하나요?",
+            "회사 전화번호가 뭐예요?",
+            "아파트 가격은 얼마인가요?",
+            "고마워요");
+
+    // 알려진 오답. 키워드 유사도의 한계라 임계값을 넘어 엉뚱한 FAQ로 답한다. 고치면 README도 함께 고친다.
+    private static final List<String> KNOWN_LEAKS = List.of(
+            "감사합니다",
+            "커피는 얼마나 마셔야 하나요?",
+            "지구에서 달까지 얼마나 걸리나요?",
+            "그 기간이 지나면 어떻게 되나요?");
 
     private static List<FaqEntry> faqs;
     private static double threshold;
@@ -60,8 +91,14 @@ class DemoEmbeddingModelTest {
     }
 
     @Test
-    void whitespaceIsIgnored() {
-        assertThat(model.embed("환불 은 어떻게\n하나요")).isEqualTo(model.embed("환불은어떻게하나요"));
+    void bigramsStayWithinWords() {
+        assertThat(model.embed("환 불")).containsOnly(0f);
+        assertThat(model.embed("환불, 교환\n")).isEqualTo(model.embed("환불 교환"));
+    }
+
+    @Test
+    void questionEndingsAreDropped() {
+        assertThat(model.embed("환불 어떻게 하나요")).isEqualTo(model.embed("환불"));
     }
 
     @Test
@@ -84,6 +121,14 @@ class DemoEmbeddingModelTest {
         for (String question : UNRELATED) {
             float[] q = model.embed(question);
             assertThat(faqs).as(question).allSatisfy(f -> assertThat(score(q, f)).isLessThan(threshold));
+        }
+    }
+
+    @Test
+    void knownLeaksStillPassThreshold() {
+        for (String question : KNOWN_LEAKS) {
+            float[] q = model.embed(question);
+            assertThat(faqs).as(question).anySatisfy(f -> assertThat(score(q, f)).isGreaterThanOrEqualTo(threshold));
         }
     }
 

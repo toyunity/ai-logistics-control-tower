@@ -26,6 +26,7 @@ class DemoChatModel implements ChatModel {
     private static final String NO_FAQ_MARKER = "FAQ 근거 없음";
     private static final String GUIDANCE = "등록된 FAQ에서 관련 내용을 찾지 못했습니다. 상담원 연결을 이용해 주세요.";
     private static final Pattern FIRST_ANSWER = Pattern.compile("^A: (.*)$", Pattern.MULTILINE);
+    private static final Pattern FOLLOW_UP = Pattern.compile("Follow-up query:\\n(.*)\\n\\nStandalone query:", Pattern.DOTALL);
     private static final Pattern CHUNK = Pattern.compile(".{1,3}", Pattern.DOTALL);
     private static final Duration CHUNK_DELAY = Duration.ofMillis(30);
 
@@ -33,11 +34,13 @@ class DemoChatModel implements ChatModel {
         log.info("Demo mode on: answers are FAQ text from a stub, not AI. No external AI API is called.");
     }
 
-    // 후속 질문 재작성 전용. 재작성 없이 프롬프트를 그대로 돌려주므로 대화 이력 전체가 검색어가 되고,
-    // 대화가 길어지면 앞선 주제에 끌려 검색 결과가 틀릴 수 있다. 실제 모델에서는 생기지 않는 한계다.
+    // 재작성 전용. 스텁은 문맥을 모르니 현재 질문만 돌려준다. 이력까지 넘기면 직전 답변의 FAQ 원문이 검색을 지배한다.
     @Override
     public ChatResponse call(Prompt prompt) {
-        return new ChatResponse(List.of(new Generation(new AssistantMessage(prompt.getUserMessage().getText()))));
+        String text = prompt.getUserMessage().getText();
+        var followUp = FOLLOW_UP.matcher(text);
+        String query = followUp.find() ? followUp.group(1) : text;
+        return new ChatResponse(List.of(new Generation(new AssistantMessage(query))));
     }
 
     @Override
