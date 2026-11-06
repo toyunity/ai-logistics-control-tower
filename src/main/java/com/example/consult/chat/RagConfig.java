@@ -2,12 +2,14 @@ package com.example.consult.chat;
 
 import com.anthropic.models.messages.OutputConfig;
 import com.example.consult.ConsultProperties;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.rag.Query;
@@ -20,6 +22,7 @@ import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 @Configuration(proxyBeanMethods = false)
 public class RagConfig {
@@ -78,7 +81,7 @@ public class RagConfig {
         return main.defaultOptions(options(props.chatModel(), props))
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
-                        MessageChatMemoryAdvisor.builder(memory).order(0).build(),
+                        MessageChatMemoryAdvisor.builder(new SkipBlankAssistant(memory)).order(0).build(),
                         RetrievalAugmentationAdvisor.builder()
                                 .order(10)
                                 .queryTransformers(rewriteFollowUp)
@@ -90,6 +93,30 @@ public class RagConfig {
                                 .queryAugmenter(augmenter)
                                 .build())
                 .build();
+    }
+
+    /** A blank assistant message in history makes the Messages API reject every later turn. */
+    private record SkipBlankAssistant(ChatMemory delegate) implements ChatMemory {
+
+        @Override
+        public void add(String conversationId, List<Message> messages) {
+            List<Message> kept = messages.stream()
+                    .filter(m -> m.getMessageType() != MessageType.ASSISTANT || StringUtils.hasText(m.getText()))
+                    .toList();
+            if (!kept.isEmpty()) {
+                delegate.add(conversationId, kept);
+            }
+        }
+
+        @Override
+        public List<Message> get(String conversationId) {
+            return delegate.get(conversationId);
+        }
+
+        @Override
+        public void clear(String conversationId) {
+            delegate.clear(conversationId);
+        }
     }
 
     private static AnthropicChatOptions.Builder options(String model, ConsultProperties props) {

@@ -163,6 +163,27 @@ class ChatServiceTest {
     }
 
     @Test
+    void doesNotStoreEmptyAssistantMessage() {
+        enqueue(finish("end_turn"));
+
+        List<ChatEvent> events = run("환불 되나요");
+
+        assertThat(events).last().isEqualTo(new Done());
+        assertThat(stored(MessageType.USER)).containsExactly("환불 되나요");
+        assertThat(stored(MessageType.ASSISTANT)).isEmpty();
+    }
+
+    @Test
+    void doesNotStoreWhitespaceOnlyAssistantMessage() {
+        enqueue(text(" "), text("\n"), finish("end_turn"));
+
+        List<ChatEvent> events = run("환불 되나요");
+
+        assertThat(events).last().isEqualTo(new Done());
+        assertThat(stored(MessageType.ASSISTANT)).isEmpty();
+    }
+
+    @Test
     void upstreamFailureEmitsFailedNotDone() {
         model.enqueueStream(Flux.concat(Flux.just(text("안녕")), Flux.error(new RuntimeException("secret"))));
 
