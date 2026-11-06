@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
-/** Binding leaves an unset ${...} key as a literal credential; @Value fails startup on it instead. */
+// 프로퍼티 바인딩은 풀리지 않은 ${...}를 그대로 키 값으로 넘긴다. @Value는 여기서 기동을 실패시킨다.
 @Component
 @Profile("!demo")
 class ApiKeyGuard {

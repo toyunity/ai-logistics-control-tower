@@ -56,12 +56,12 @@ public class RagConfig {
             ChatMemory memory,
             VectorStore store,
             ConsultProperties props) {
-        // CompressionQueryTransformer builds its client eagerly, so the options must be set first.
+        // CompressionQueryTransformer가 빌드 시점에 클라이언트를 만들므로 옵션을 먼저 넣어야 한다.
         rewriter.defaultOptions(options(props.rewriteModel(), props));
         QueryTransformer compression = CompressionQueryTransformer.builder().chatClientBuilder(rewriter).build();
         QueryTransformer rewriteFollowUp = q -> {
             long userTurns = q.history().stream().filter(m -> m.getMessageType() == MessageType.USER).count();
-            if (userTurns <= 1) return q; // history includes the current question
+            if (userTurns <= 1) return q; // 이력에 현재 질문까지 들어 있다
             try {
                 return compression.transform(q);
             } catch (RuntimeException e) {
@@ -77,7 +77,7 @@ public class RagConfig {
                 ? new Query(EMPTY_CONTEXT_PREFIX + "<question>" + q.text() + "</question>")
                 : withContext.augment(q, docs);
 
-        // Fixed order: memory first, so the raw question is stored and RAG receives the history.
+        // 메모리가 먼저 돌아야 원래 질문이 저장되고 RAG가 이력을 받는다.
         return main.defaultOptions(options(props.chatModel(), props))
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
@@ -95,7 +95,7 @@ public class RagConfig {
                 .build();
     }
 
-    /** A blank assistant message in history makes the Messages API reject every later turn. */
+    // 이력에 빈 assistant 메시지가 있으면 Messages API가 이후 턴을 모두 거부한다고 보고 걸러 낸다. 실제 API로 재현하지는 못했다.
     private record SkipBlankAssistant(ChatMemory delegate) implements ChatMemory {
 
         @Override

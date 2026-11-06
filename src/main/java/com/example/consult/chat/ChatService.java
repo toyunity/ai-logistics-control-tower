@@ -34,9 +34,8 @@ public class ChatService {
         this.props = props;
     }
 
-    // ponytail: a client disconnect cancels this Flux but not the upstream HTTP call, so an abandoned
-    // answer keeps running up to consult.max-tokens or spring.ai.anthropic.timeout. Upgrade when Spring AI
-    // propagates cancellation, or replace it with a direct SDK streaming call that closes the response.
+    // 클라이언트가 끊어도 이 Flux만 취소되고 업스트림 HTTP 호출은 계속된다. 버려진 답변도 max-tokens나 타임아웃까지 생성된다.
+    // Spring AI가 취소를 전파하거나 SDK 스트리밍을 직접 호출해 응답을 닫아야 해결된다.
     public Flux<ChatEvent> stream(UUID id, String message) {
         return Flux.defer(() -> {
             var sourcesSent = new AtomicBoolean();
@@ -45,11 +44,11 @@ public class ChatService {
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id.toString()))
                     .stream()
                     .chatClientResponse()
-                    .timeout(props.streamIdleTimeout()) // per chunk: limits silence, not answer length
+                    .timeout(props.streamIdleTimeout()) // 청크 단위라 침묵만 제한하고 답변 길이는 제한하지 않는다
                     .concatMapIterable(r -> toEvents(r, sourcesSent));
             return Flux.<ChatEvent>just(new Meta(id))
                     .concatWith(body)
-                    .concatWith(Flux.just(new Done())) // onErrorResume sits after this so failures skip Done
+                    .concatWith(Flux.just(new Done())) // onErrorResume이 이보다 뒤에 있어야 실패 시 Done이 나가지 않는다
                     .onErrorResume(this::toFailed);
         });
     }
@@ -68,7 +67,7 @@ public class ChatService {
         }
         var result = r.chatResponse().getResult();
         String text = result.getOutput().getText();
-        if (text != null && !text.isEmpty()) { // not hasText: whitespace chunks carry the spacing
+        if (text != null && !text.isEmpty()) { // hasText로 거르면 공백 청크가 빠져 띄어쓰기가 사라진다
             events.add(new Delta(text));
         }
         if ("refusal".equalsIgnoreCase(result.getMetadata().getFinishReason())) {

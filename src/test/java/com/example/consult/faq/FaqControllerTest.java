@@ -20,7 +20,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(FaqController.class)
-@EnableConfigurationProperties(ConsultProperties.class) // slice does not apply @ConfigurationPropertiesScan
+@EnableConfigurationProperties(ConsultProperties.class) // 슬라이스 테스트에는 @ConfigurationPropertiesScan이 적용되지 않는다
 class FaqControllerTest {
 
     @Autowired MockMvc mvc;

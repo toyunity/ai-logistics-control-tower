@@ -16,7 +16,7 @@ import reactor.core.publisher.Flux;
 public class FakeChatModel implements ChatModel {
 
     private final Deque<Flux<ChatResponse>> streams = new ArrayDeque<>();
-    private final Deque<Object> calls = new ArrayDeque<>(); // String text or RuntimeException
+    private final Deque<Object> calls = new ArrayDeque<>(); // String 또는 RuntimeException
     private final List<Prompt> prompts = new ArrayList<>();
     private int callCount;
 
@@ -90,7 +90,7 @@ public class FakeChatModel implements ChatModel {
         return new ChatResponse(List.of());
     }
 
-    /** Thinking chunk: an assistant message whose text is null. */
+    // thinking 청크. assistant 메시지의 text가 null이다.
     public static ChatResponse nullText() {
         return new ChatResponse(List.of(new Generation(AssistantMessage.builder().content(null).build())));
     }

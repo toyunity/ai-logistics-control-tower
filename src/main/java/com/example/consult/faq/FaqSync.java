@@ -35,7 +35,7 @@ public class FaqSync implements ApplicationRunner {
         this.props = props;
     }
 
-    /** Embedding failure propagates and fails startup: better than answering from stale FAQs. */
+    // 임베딩 실패는 그대로 던져 기동을 막는다. 낡은 FAQ로 답하는 것보다 낫다.
     @Override
     public void run(ApplicationArguments args) throws Exception {
         try (InputStream in = new ClassPathResource("faq/faqs.json").getInputStream()) {
@@ -43,7 +43,7 @@ public class FaqSync implements ApplicationRunner {
         }
     }
 
-    // Concurrent instance startup is idempotent via upsert, so no lock.
+    // 여러 인스턴스가 동시에 떠도 upsert라 결과가 같으므로 락을 걸지 않는다.
     public void sync(List<FaqEntry> entries) {
         if (entries.isEmpty()) {
             throw new IllegalArgumentException("faqs.json is empty");
@@ -92,7 +92,7 @@ public class FaqSync implements ApplicationRunner {
     private String hash(FaqEntry e) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            // \u0000 separators so field boundaries can't be shifted to collide
+            // 필드 경계를 밀어 해시가 충돌하는 일이 없도록 NUL로 구분한다
             String joined = e.question() + '\u0000' + e.answer() + '\u0000' + e.category()
                     + '\u0000' + props.embeddingIndex();
             return java.util.HexFormat.of().formatHex(md.digest(joined.getBytes(StandardCharsets.UTF_8)));

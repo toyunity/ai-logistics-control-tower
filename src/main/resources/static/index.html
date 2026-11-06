@@ -76,7 +76,7 @@
   const input = document.getElementById('input');
   const send = document.getElementById('send');
 
-  // sessionStorage can throw (blocked storage); this variable keeps the conversation going regardless.
+  // 저장소가 막혀 있으면 sessionStorage가 예외를 던진다. 그래도 이 변수로 대화는 이어진다.
   let conversationId;
   try { conversationId = sessionStorage.getItem(STORAGE_KEY) ?? undefined; } catch {}
 
@@ -120,7 +120,7 @@
     return { event, data: data.join('\n') };
   }
 
-  // Network chunks may split a UTF-8 character or an event, so only complete blocks are parsed.
+  // 네트워크 청크가 UTF-8 문자나 이벤트 중간에서 잘릴 수 있어 완결된 블록만 파싱한다.
   async function readEvents(body, onEvent) {
     const reader = body.getReader();
     const decoder = new TextDecoder();
@@ -149,7 +149,7 @@
     const answer = append(bot, 'div', 'answer');
     log.scrollTop = log.scrollHeight;
 
-    // Stays set unless the stream reaches its terminal event, so a cut-off stream is reported too.
+    // 종료 이벤트를 받아야 지워진다. 그래서 중간에 끊긴 스트림도 오류로 표시된다.
     let failure = MSG_FAILED;
     try {
       const res = await fetch('/api/chat/stream', {
@@ -170,13 +170,13 @@
         });
       }
     } catch {
-      // A read failure after the terminal event changes nothing: failure already holds the outcome.
+      // 종료 이벤트 뒤의 읽기 실패는 무시한다. 결과는 이미 failure에 들어 있다.
     }
     if (!answer.textContent.trim()) bot.remove();
     if (failure) {
       errorBox.textContent = failure;
       errorBox.hidden = false;
-      log.scrollTop = log.scrollHeight; // the error box just shrank the log
+      log.scrollTop = log.scrollHeight; // 오류 상자가 나타나 로그 영역이 줄어든다
     }
   }
 
@@ -193,7 +193,7 @@
   });
 
   input.addEventListener('keydown', (e) => {
-    // Enter during Korean IME composition only commits the syllable.
+    // 한글 조합 중의 Enter는 글자를 확정할 뿐이다.
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       form.requestSubmit();

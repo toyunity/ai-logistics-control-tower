@@ -47,7 +47,7 @@ import reactor.core.publisher.Flux;
 @ExtendWith(OutputCaptureExtension.class)
 class ChatStreamIT {
 
-    // HTTP/1.1 so that closing the body is a TCP close Tomcat can see, not an h2c stream reset.
+    // h2c 스트림 리셋이 아니라 Tomcat이 알아챌 수 있는 TCP 종료가 되도록 HTTP/1.1을 쓴다.
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
     @LocalServerPort int port;
@@ -95,7 +95,7 @@ class ChatStreamIT {
         assertThat(memoryRows("USER")).isEqualTo(2);
         assertThat(memoryRows("ASSISTANT")).isEqualTo(2);
 
-        // The rewrite call comes first, so the last prompt is the one sent to the streaming model.
+        // 재작성 호출이 먼저라 마지막 프롬프트가 스트리밍 모델로 간 것이다.
         List<Message> sent = chatModel.prompts().getLast().getInstructions();
         assertThat(textsOf(sent, MessageType.USER)).anyMatch(t -> t.contains("첫째 질문 ABC"));
         assertThat(textsOf(sent, MessageType.ASSISTANT)).contains("첫째 답변 XYZ");
@@ -153,7 +153,7 @@ class ChatStreamIT {
         HttpResponse<Stream<String>> response = post("질문", BodyHandlers.ofLines());
         assertThat(response.statusCode()).isEqualTo(200);
 
-        // Collecting to the end of the body without an IOException is the clean-close check.
+        // IOException 없이 끝까지 읽히는 것이 정상 종료 확인이다.
         List<SseEvent> events;
         try (var lines = response.body()) {
             events = parse(lines.toList());
@@ -169,7 +169,7 @@ class ChatStreamIT {
     void inputRejectedByTheDatabaseIsNotLogged(CapturedOutput output) throws Exception {
         String marker = "DB-REJECTED-INPUT-MARKER";
 
-        // NUL passes validation, then the chat memory insert fails.
+        // NUL은 검증을 통과한 뒤 대화 기록 저장에서 실패한다.
         assertThat(names(chat(marker + " \\u0000 뒤"))).endsWith("error");
 
         assertThat(output.getOut() + output.getErr()).doesNotContain(marker);

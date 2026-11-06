@@ -145,10 +145,10 @@ class ChatServiceTest {
         List<ChatEvent> second = run("그건 얼마나 걸려요");
 
         assertThat(model.callCount()).isEqualTo(1);
-        // The fake embedding only matches text containing "환불", so a hit proves the rewritten query was searched.
+        // 가짜 임베딩은 "환불"이 든 문장만 찾으므로, 걸렸다면 재작성된 질문으로 검색한 것이다.
         assertThat(sourceIds(second)).contains("refund-policy");
         assertThat(stored(MessageType.USER)).containsExactly("환불 되나요", "그건 얼마나 걸려요");
-        List<Prompt> prompts = model.prompts(); // turn 1 stream, rewrite call, turn 2 stream
+        List<Prompt> prompts = model.prompts(); // 1턴 스트림, 재작성, 2턴 스트림
         assertThat(prompts.get(1).getOptions().getModel()).isEqualTo("rewrite-model");
         assertThat(prompts.get(1).getOptions().getMaxTokens()).isEqualTo(1000);
         assertThat(prompts.get(2).getOptions().getModel()).isEqualTo("chat-model");
@@ -217,7 +217,7 @@ class ChatServiceTest {
 
     @Test
     void slowButSteadyStreamIsNotCut() {
-        // Spacing is a tenth of the timeout, and the 750ms total is longer than the timeout.
+        // 간격은 타임아웃의 10분의 1이고, 전체 750ms는 타임아웃보다 길다.
         model.enqueueStream(Flux.range(1, 15).delayElements(Duration.ofMillis(50)).map(i -> text("조각" + i)));
 
         List<ChatEvent> events = service(faqStore(), Duration.ofMillis(500))
@@ -287,7 +287,7 @@ class ChatServiceTest {
         List<ChatEvent> second = run("그건 얼마나 걸려요");
 
         assertThat(second).last().isEqualTo(new Done());
-        // Exact message match: the FAQ text in the augmented prompt also contains this question.
+        // 보강된 프롬프트의 FAQ 본문에도 이 질문이 있어 메시지 전체로 비교한다.
         List<Prompt> prompts = model.prompts();
         assertThat(prompts.get(prompts.size() - 1).getInstructions())
                 .filteredOn(m -> m.getMessageType() == MessageType.USER)
