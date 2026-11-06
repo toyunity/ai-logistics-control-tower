@@ -49,7 +49,7 @@ class DemoModeIT {
     private static final AtomicInteger EXTERNAL_REQUESTS = new AtomicInteger();
     private static HttpServer stub;
 
-    // 외부 API 주소를 기록용 스텁으로 돌려, 데모가 어디든 호출하면 카운트에 잡히게 한다.
+    // Claude, OpenAI 주소를 기록용 스텁으로 돌려, 데모가 이 둘을 호출하면 카운트에 잡히게 한다.
     @DynamicPropertySource
     static void pointAiClientsAtStub(DynamicPropertyRegistry r) throws IOException {
         stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
