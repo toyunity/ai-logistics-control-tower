@@ -54,9 +54,12 @@ public class InMemoryRobotFleet implements RobotFleet {
     @Override
     public void reassign(UUID commandId, String fromRobot, String toRobot) {
         failIfDown();
-        commandIds.add(commandId);
         RobotStatus from = robots.get(fromRobot);
         RobotStatus to = robots.get(toRobot);
+        if (from == null || to == null) {
+            throw new GatewayUnavailableException("no such robot", null);
+        }
+        commandIds.add(commandId);
         set(new RobotStatus(from.id(), from.state(), from.batteryPercent(), 0, from.queueCapacity()));
         set(new RobotStatus(
                 to.id(), to.state(), to.batteryPercent(), to.queuedTasks() + from.queuedTasks(), to.queueCapacity()));

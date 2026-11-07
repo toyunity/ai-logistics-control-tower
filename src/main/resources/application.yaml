@@ -1,10 +1,14 @@
 spring:
   application.name: control-tower
+  task.scheduling.pool.size: 4       # 기본값 1이면 느린 이벤트 전송이 시뮬레이터 틱과 감지까지 막는다
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/consult}
     username: ${DB_USER:consult}
     password: ${DB_PASSWORD:consult}
     hikari.data-source-properties.logServerErrorDetail: false   # true면 pgjdbc 예외 메시지에 사용자 입력이 그대로 들어간다
+  sql.init:
+    mode: always                    # 기본값 embedded면 PostgreSQL에서 관제 스키마가 만들어지지 않는다
+    schema-locations: classpath:schema-control.sql
   ai:
     model:
       chat: anthropic
@@ -34,3 +38,6 @@ controltower:
   top-k: 3
   similarity-threshold: 0.4         # 측정값이 아닌 초기값. 보정 방법은 README 검증 상태 참고
   stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 시간 한도는 spring.ai.anthropic.timeout
+  simulator:
+    enabled: true
+    event-target: ""                # 비우면 실행 중인 서버 자신의 포트로 보낸다

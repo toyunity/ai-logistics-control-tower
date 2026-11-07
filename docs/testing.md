@@ -10,6 +10,7 @@
 | 웹 슬라이스 | `ChatControllerTest`, `FaqControllerTest` | MockMvc | SSE 형식, 입력 검증, 로그에 입력이 남지 않음 |
 | 설정 | `ApiKeyGuardTest`, `ContextLoadsIT` | 실제 설정 파일 | 키 누락 시 기동 실패, 빈 구성과 스키마 생성 |
 | 통합 | `FaqSyncIT`, `ChatStreamIT`, `DemoModeIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 연결 끊김, 동기화, 데모 전체 흐름 |
+| 저장소 | `PersistenceIT`, `InMemoryRepositoriesContractTest` | PostgreSQL 컨테이너, 메모리 대역 | 대역과 JDBC의 공통 계약, 동시 선점, 충돌 뒤 트랜잭션 커밋, 기동 정리 |
 | SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 타임아웃, 임베딩 입력 |
 | 실제 API | `LiveApiIT` | 실제 Claude, OpenAI | 요청 수락, 재작성 동작, 검색 품질 표 |
 

@@ -67,8 +67,11 @@ public class InMemoryConveyors implements Conveyors {
     @Override
     public void restart(UUID commandId, String id) {
         failIfDown();
-        commandIds.add(commandId);
         ConveyorStatus c = conveyors.get(id);
+        if (c == null) {
+            throw new GatewayUnavailableException("no such conveyor", null);
+        }
+        commandIds.add(commandId);
         set(new ConveyorStatus(c.id(), c.zone(), RunState.RUNNING, FaultClass.NONE));
         afterSend.run();
     }

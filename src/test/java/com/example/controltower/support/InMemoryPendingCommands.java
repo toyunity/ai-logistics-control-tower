@@ -14,8 +14,17 @@ import java.util.UUID;
 public class InMemoryPendingCommands implements PendingCommands {
 
     private final Map<UUID, PendingCommand> commands = new LinkedHashMap<>();
+    private final InMemoryCommandAudit audit;
     private int reads;
     private int saves;
+
+    public InMemoryPendingCommands() {
+        this(new InMemoryCommandAudit());
+    }
+
+    public InMemoryPendingCommands(InMemoryCommandAudit audit) {
+        this.audit = audit;
+    }
 
     public int reads() {
         return reads;
@@ -32,6 +41,15 @@ public class InMemoryPendingCommands implements PendingCommands {
     @Override
     public synchronized void save(PendingCommand command) {
         saves++;
+        CommandSpec spec = command.spec();
+        commands.replaceAll((id, c) -> sameKey(c, command.accountId(), spec)
+                        && c.status() == CommandStatus.PENDING
+                        && !c.expiresAt().isAfter(command.createdAt())
+                ? withStatus(c, CommandStatus.EXPIRED)
+                : c);
+        if (commands.values().stream().anyMatch(c -> sameKey(c, command.accountId(), spec) && c.status() == CommandStatus.PENDING)) {
+            throw new IllegalStateException("live card of the same key");
+        }
         commands.put(command.id(), command);
     }
 
@@ -61,14 +79,28 @@ public class InMemoryPendingCommands implements PendingCommands {
         if (from == CommandStatus.PENDING && !c.expiresAt().isAfter(now)) {
             return false;
         }
+        if (to == CommandStatus.EXECUTING && commands.values().stream()
+                .anyMatch(o -> o.status() == CommandStatus.EXECUTING && o.spec().targetId().equals(c.spec().targetId()))) {
+            return false;
+        }
         commands.put(id, withStatus(c, to));
         return true;
     }
 
     @Override
     public synchronized void markStaleExecutingUnconfirmed() {
-        commands.replaceAll((id, c) ->
-                c.status() == CommandStatus.EXECUTING ? withStatus(c, CommandStatus.UNCONFIRMED) : c);
+        for (PendingCommand c : List.copyOf(commands.values())) {
+            if (c.status() == CommandStatus.EXECUTING) {
+                commands.put(c.id(), withStatus(c, CommandStatus.UNCONFIRMED));
+                audit.record(c.id(), c.accountId(), c.spec(), CommandStatus.UNCONFIRMED, Instant.now());
+            }
+        }
+    }
+
+    private static boolean sameKey(PendingCommand c, String accountId, CommandSpec spec) {
+        return c.accountId().equals(accountId)
+                && c.spec().kind() == spec.kind()
+                && c.spec().targetId().equals(spec.targetId());
     }
 
     private static PendingCommand withStatus(PendingCommand c, CommandStatus status) {

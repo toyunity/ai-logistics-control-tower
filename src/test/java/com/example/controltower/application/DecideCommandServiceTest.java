@@ -76,9 +76,9 @@ class DecideCommandServiceTest {
     private final InMemorySorters sorters = new InMemorySorters(SORTER);
     private final InMemoryRobotFleet fleet = new InMemoryRobotFleet(SOURCE, TARGET);
     private final InMemorySafetySignals safety = new InMemorySafetySignals(CLOCK);
-    private final InMemoryPendingCommands pending = new InMemoryPendingCommands();
-    private final InMemoryMaintenanceDesk desk = new InMemoryMaintenanceDesk();
     private final InMemoryCommandAudit audit = new InMemoryCommandAudit();
+    private final InMemoryPendingCommands pending = new InMemoryPendingCommands(audit);
+    private final InMemoryMaintenanceDesk desk = new InMemoryMaintenanceDesk();
     private final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
     private final DecideCommandService service = service(CLOCK, unitOfWork, sorters);
 
@@ -179,6 +179,23 @@ class DecideCommandServiceTest {
         PendingCommand card = card(RESTART);
 
         assertRefusedUntouched(card, service.confirm(card.id(), new Actor("op-1", Role.VIEWER)), Outcome.FORBIDDEN);
+    }
+
+    // 새 제안이 저장되면 옛 카드는 PENDING이 아니라 EXPIRED 행이 된다. 안내는 만료여야 한다.
+    @Test
+    void cardExpiredByANewProposal_stillSaysExpired() {
+        PendingCommand card = card(MAINTENANCE);
+        Clock later = Clock.offset(CLOCK, TTL);
+        new ProposeCommandService(
+                        conveyors, sorters, fleet, safety, pending, desk, unitOfWork, POLICY, LineTopology.DEFAULT, later, TTL)
+                .propose(MAINTENANCE, OPERATOR);
+
+        CommandResult result = service(later, unitOfWork, sorters).confirm(card.id(), OPERATOR);
+
+        assertThat(rowStatus(card)).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(result.outcome()).isEqualTo(Outcome.CONFLICT);
+        assertThat(result.status()).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(result.message()).contains("유효 시간");
     }
 
     @Test

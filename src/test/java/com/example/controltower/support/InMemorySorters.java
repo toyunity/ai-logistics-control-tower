@@ -52,11 +52,18 @@ public class InMemorySorters implements Sorters {
     @Override
     public void divert(UUID commandId, String fromChute, String toChute) {
         failIfDown();
+        if (!isChuteId(fromChute) || !isChuteId(toChute)) {
+            throw new GatewayUnavailableException("chute id out of format", null);
+        }
         commandIds.add(commandId);
         Map<String, String> diversions = new HashMap<>(status.diversions());
         diversions.put(fromChute, toChute);
         status = new SorterStatus(status.id(), status.state(), status.blocked(), status.chutes(), diversions);
         afterSend.run();
+    }
+
+    private static boolean isChuteId(String id) {
+        return id != null && id.matches("CH-\\d\\d");
     }
 
     private void failIfDown() {

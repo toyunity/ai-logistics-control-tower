@@ -131,8 +131,9 @@ public final class DecideCommandService implements DecideCommand {
     private CommandResult conflict(PendingCommand card) {
         Instant now = clock.instant();
         PendingCommand current = pending.find(card.id()).orElse(card);
-        // 조건부 갱신은 만료된 행을 바꾸지 않으므로 DB에는 PENDING으로 남아 있다.
-        if (current.status() == CommandStatus.PENDING && !current.expiresAt().isAfter(now)) {
+        // 조건부 갱신은 만료된 행을 바꾸지 않으므로 같은 대상의 새 제안이 EXPIRED로 닫기 전까지 PENDING으로 남아 있다.
+        if (current.status() == CommandStatus.EXPIRED
+                || (current.status() == CommandStatus.PENDING && !current.expiresAt().isAfter(now))) {
             return new CommandResult(Outcome.CONFLICT, CommandStatus.EXPIRED, EXPIRED);
         }
         return new CommandResult(Outcome.CONFLICT, current.status(), ALREADY_DECIDED);
