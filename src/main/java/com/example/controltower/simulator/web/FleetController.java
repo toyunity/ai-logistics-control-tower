@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 로봇 관제 형식. 배터리를 0~1 소수로 보고한다. */
 @RestController
 @ConditionalOnProperty(name = "controltower.simulator.enabled", havingValue = "true")
 @RequestMapping("/sim/fleet")

@@ -42,6 +42,12 @@ public class VendorBController {
 
     @PostMapping("/reroutes")
     ResponseEntity<Void> reroute(@Valid @RequestBody RerouteRequest request) {
+        List<SimSnapshot.Lane> lanes = simulator.snapshot().lanes();
+        boolean known = lanes.stream().anyMatch(l -> l.laneNo() == request.src())
+                && lanes.stream().anyMatch(l -> l.laneNo() == request.dst());
+        if (!known) {
+            return ResponseEntity.notFound().build();
+        }
         boolean applied = simulator.divert(request.txn(), request.src(), request.dst());
         return ResponseEntity.status(applied ? HttpStatus.OK : HttpStatus.CONFLICT).build();
     }

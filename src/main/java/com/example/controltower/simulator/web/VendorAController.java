@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** PLC 제조사 형식. 값의 의미는 레지스터 위치로만 구분된다. */
 @RestController
 @ConditionalOnProperty(name = "controltower.simulator.enabled", havingValue = "true")
 @RequestMapping("/sim/vendor-a/plc/{id}")

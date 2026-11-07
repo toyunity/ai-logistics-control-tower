@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 안전 PLC 형식. 시각은 epoch 밀리초다. */
 @RestController
 @ConditionalOnProperty(name = "controltower.simulator.enabled", havingValue = "true")
 public class SafetyController {
