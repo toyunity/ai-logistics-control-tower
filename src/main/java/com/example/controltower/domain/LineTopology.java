@@ -14,6 +14,10 @@ public final class LineTopology {
 
     private LineTopology() {}
 
+    public List<String> all() {
+        return Stream.of(LINE, CHUTES, ROBOTS).flatMap(List::stream).toList();
+    }
+
     public boolean contains(String id) {
         return id != null && (LINE.contains(id) || CHUTES.contains(id) || ROBOTS.contains(id));
     }
