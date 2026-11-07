@@ -2,6 +2,7 @@ package com.example.controltower.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.example.controltower.application.service.DetectAnomaliesService;
 import com.example.controltower.domain.ChuteStatus;
@@ -9,6 +10,7 @@ import com.example.controltower.domain.ConveyorStatus;
 import com.example.controltower.domain.EquipmentEvent;
 import com.example.controltower.domain.FaultClass;
 import com.example.controltower.domain.Incident;
+import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.RobotStatus;
 import com.example.controltower.domain.RunState;
 import com.example.controltower.domain.Severity;
@@ -27,6 +29,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -46,7 +50,7 @@ class DetectAnomaliesServiceTest {
     private final DetectAnomaliesService service = service(CLOCK, FAR_CUTOFF);
 
     private DetectAnomaliesService service(Clock clock, LocalTime cutoff) {
-        return new DetectAnomaliesService(conveyors, sorters, fleet, log, incidents, clock, cutoff);
+        return new DetectAnomaliesService(conveyors, sorters, fleet, log, incidents, LineTopology.DEFAULT, clock, cutoff);
     }
 
     private static ConveyorStatus running(String id) {
@@ -459,7 +463,7 @@ class DetectAnomaliesServiceTest {
     }
 
     @Test
-    void sorterDown_conveyorOpensWithZeroParcels() {
+    void sorterDown_conveyorStillOpens_gradeRisesOnRecoveryAndSurvivesTimeout() {
         sorters.set(sorter(chute("CH-01", false, 300)));
         stopCv3(Duration.ofMinutes(2));
         sorters.setFailing(true);
@@ -471,8 +475,133 @@ class DetectAnomaliesServiceTest {
 
         sorters.setFailing(false);
         service.detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+
+        sorters.setFailing(true);
+        service.detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+    }
+
+    @Test
+    void stoppedThenFault_keepsGrade() {
+        stopCv3(Duration.ofMinutes(15));
+        service.detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+
+        conveyors.set(conveyor("CV-3", RunState.FAULT));
+        event("c-2", "CV-3", "FAULT", null, Duration.ZERO);
+        service.detect();
 
         assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+    }
+
+    @Test
+    void laterNonStopCode_keepsGrade() {
+        stopCv3(Duration.ofMinutes(15));
+        service.detect();
+
+        event("c-2", "CV-3", "RUNNING", null, Duration.ZERO);
+        service.detect();
+
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+    }
+
+    @Test
+    void stopEventLost_gradesFromIncidentOpenedAt() {
+        conveyors.set(conveyor("CV-3", RunState.STOPPED));
+        service.detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV3);
+
+        service(Clock.fixed(NOW.plus(Duration.ofMinutes(4)), ZoneOffset.UTC), FAR_CUTOFF).detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV2);
+
+        service(Clock.fixed(NOW.plus(Duration.ofMinutes(11)), ZoneOffset.UTC), FAR_CUTOFF).detect();
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV1);
+    }
+
+    @Test
+    void nonStopIncidents_doNotAgeIntoHigherGrade() {
+        sorters.set(sorter(chute("CH-03", true, 40)));
+        fleet.set(robot("AMR-01", 10));
+        fleet.set(robot("AMR-02", 10));
+        event("s-1", "SC-1", "READ_DEGRADED", 12, Duration.ZERO);
+        service.detect();
+
+        service(Clock.fixed(NOW.plus(Duration.ofMinutes(30)), ZoneOffset.UTC), FAR_CUTOFF).detect();
+
+        assertThat(incidents.open()).hasSize(3).allSatisfy(i -> assertThat(i.severity()).isEqualTo(Severity.SEV3));
+    }
+
+    @Test
+    void chuteFullLongThenStoppedBriefly_gradesFromStopNotFromOpenedAt() {
+        sorters.set(sorter(chute("CH-03", true, 0)));
+        service.detect();
+
+        Instant later = NOW.plus(Duration.ofMinutes(30));
+        sorters.set(sorter(chute("CH-03", RunState.STOPPED, true, 0)));
+        log.append(new EquipmentEvent("c-1", "CH-03", "STOPPED", null, later.minusSeconds(60)));
+        service(Clock.fixed(later, ZoneOffset.UTC), FAR_CUTOFF).detect();
+
+        assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV3);
+    }
+
+    @Test
+    void cycleInProgress_concurrentDetectReturnsWithoutWaiting() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        InMemoryConveyors blocking = new InMemoryConveyors(conveyor("CV-3", RunState.STOPPED)) {
+            @Override
+            public List<ConveyorStatus> all() {
+                entered.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    throw new IllegalStateException(e);
+                }
+                return super.all();
+            }
+        };
+        DetectAnomaliesService blocked = new DetectAnomaliesService(
+                blocking, sorters, fleet, log, incidents, LineTopology.DEFAULT, CLOCK, FAR_CUTOFF);
+
+        CompletableFuture<Void> first = CompletableFuture.runAsync(blocked::detect);
+        try {
+            entered.await();
+            assertTimeoutPreemptively(Duration.ofSeconds(2), blocked::detect);
+            assertThat(sorters.reads()).isEqualTo(1);
+            assertThat(incidents.all()).isEmpty();
+        } finally {
+            release.countDown();
+        }
+        first.get();
+
+        assertThat(onlyOpen().equipmentId()).isEqualTo("CV-3");
+
+        blocking.set(running("CV-3"));
+        blocked.detect();
+        assertThat(incidents.open()).isEmpty();
+    }
+
+    @Test
+    void deviceIdsOutsideTopology_openNothing() {
+        conveyors.set(conveyor("CV-3<script>", RunState.STOPPED));
+        sorters.set(sorter(chute("CH-03<script>", true, 0)));
+        fleet.set(robot("AMR-<x>", 10));
+        fleet.set(robot("AMR-<y>", 10));
+
+        service.detect();
+
+        assertThat(incidents.all()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RunState.class, names = {"UNKNOWN", "OFFLINE"})
+    void chuteReportsFull_opensEvenWhenStateUnknown(RunState state) {
+        sorters.set(sorter(chute("CH-03", state, true, 0)));
+
+        service.detect();
+
+        assertThat(onlyOpen().kind()).isEqualTo("CHUTE_FULL");
     }
 
     @Test

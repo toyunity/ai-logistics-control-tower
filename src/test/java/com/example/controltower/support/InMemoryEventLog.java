@@ -12,7 +12,8 @@ import java.util.Optional;
 /** 조회 구간은 양 끝을 포함한다. */
 public class InMemoryEventLog implements EventLog {
 
-    private static final Comparator<EquipmentEvent> BY_TIME = Comparator.comparing(EquipmentEvent::occurredAt);
+    private static final Comparator<EquipmentEvent> BY_TIME =
+            Comparator.comparing(EquipmentEvent::occurredAt).thenComparing(EquipmentEvent::eventId);
 
     private final Map<String, EquipmentEvent> events = new LinkedHashMap<>();
     private boolean failing;
