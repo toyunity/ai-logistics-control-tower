@@ -57,6 +57,9 @@ public final class SafetyPolicy {
         if (from.equals(to)) {
             return deny(DenialCode.SAME_TARGET);
         }
+        if (s.state() == RunState.UNKNOWN) {
+            return deny(DenialCode.STATE_UNKNOWN);
+        }
         if (s.state() != RunState.RUNNING) {
             return deny(DenialCode.SORTER_NOT_RUNNING);
         }
