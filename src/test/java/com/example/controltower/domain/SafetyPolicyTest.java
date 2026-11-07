@@ -1,6 +1,9 @@
 package com.example.controltower.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -156,6 +159,8 @@ class SafetyPolicyTest {
         ConveyorStatus broken = conveyor(RunState.UNKNOWN, FaultClass.MECHANICAL);
         assertThat(policy.restart(broken, sorter(RunState.RUNNING, true), signal(false, true, NOW), NOW))
                 .isEqualTo(denied(DenialCode.WORKER_IN_ZONE));
+        assertThat(policy.restart(broken, sorter(RunState.RUNNING, true), signal(true, false, NOW), NOW))
+                .isEqualTo(denied(DenialCode.EMERGENCY_STOP_ACTIVE));
     }
 
     // divert
@@ -165,7 +170,7 @@ class SafetyPolicyTest {
     }
 
     private static ChuteStatus source() {
-        return chute("CH-03", "A", RunState.RUNNING, 20, 40, false);
+        return chute("CH-03", "A", RunState.RUNNING, 20, 99, false);
     }
 
     private static ChuteStatus target() {
@@ -186,13 +191,26 @@ class SafetyPolicyTest {
     }
 
     @Test
+    void divert_loadUnderCapacityWithUnevenRates_allowed() {
+        ChuteStatus from = chute("CH-03", "A", RunState.RUNNING, 19, 99, false);
+        ChuteStatus to = chute("CH-04", "A", RunState.RUNNING, 21, 40, false);
+        assertThat(divert(from, to)).isEqualTo(ALLOWED);
+    }
+
+    @Test
     void divert_loadOverCapacity_denied() {
         ChuteStatus busy = chute("CH-04", "A", RunState.RUNNING, 21, 40, false);
         assertThat(divert(source(), busy)).isEqualTo(denied(DenialCode.OVER_CAPACITY));
     }
 
+    @Test
+    void divert_sorterUnknown_denied() {
+        assertThat(policy.divert(sorter(RunState.UNKNOWN, false, source(), target()), "CH-03", "CH-04"))
+                .isEqualTo(denied(DenialCode.STATE_UNKNOWN));
+    }
+
     @ParameterizedTest
-    @EnumSource(value = RunState.class, names = "RUNNING", mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = RunState.class, names = {"RUNNING", "UNKNOWN"}, mode = EnumSource.Mode.EXCLUDE)
     void divert_sorterNotRunning_denied(RunState state) {
         assertThat(policy.divert(sorter(state, false, source(), target()), "CH-03", "CH-04"))
                 .isEqualTo(denied(DenialCode.SORTER_NOT_RUNNING));
@@ -261,6 +279,12 @@ class SafetyPolicyTest {
         assertThat(policy.reassign(BUSY_ROBOT, robot(RunState.RUNNING, 30, 0, 4))).isEqualTo(ALLOWED);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = RunState.class, names = {"STOPPED", "DEGRADED"})
+    void reassign_targetStoppedOrDegraded_allowed(RunState state) {
+        assertThat(policy.reassign(BUSY_ROBOT, robot(state, 80, 0, 4))).isEqualTo(ALLOWED);
+    }
+
     @Test
     void reassign_sourceOfflineWithTasks_allowed() {
         assertThat(policy.reassign(fromRobot(RunState.OFFLINE, 10, 2), robot(RunState.RUNNING, 80, 0, 4)))
@@ -301,6 +325,30 @@ class SafetyPolicyTest {
     void reassign_queueFull_denied() {
         assertThat(policy.reassign(BUSY_ROBOT, robot(RunState.RUNNING, 80, 4, 4)))
                 .isEqualTo(denied(DenialCode.QUEUE_FULL));
+    }
+
+    // 상태 생성 규칙: null을 도메인에 들이지 않아 정책의 비교가 조용히 통과하지 못하게 한다.
+
+    @Test
+    void statusRecords_rejectNullStateOrFault() {
+        assertThatNullPointerException().isThrownBy(() -> conveyor(null, FaultClass.NONE));
+        assertThatNullPointerException().isThrownBy(() -> conveyor(RunState.STOPPED, null));
+        assertThatNullPointerException().isThrownBy(() -> chute("CH-03", "A", null, 20, 40, false));
+        assertThatNullPointerException().isThrownBy(() -> sorter(null, false));
+        assertThatNullPointerException().isThrownBy(() -> robot(null, 80, 0, 4));
+    }
+
+    @Test
+    void safetyStatus_rejectsNullZoneOrMeasuredAt() {
+        assertThatNullPointerException().isThrownBy(() -> new SafetyStatus(null, false, false, NOW));
+        assertThatNullPointerException().isThrownBy(() -> new SafetyStatus("Z1", false, false, null));
+    }
+
+    @Test
+    void chuteStatus_rejectsNegativeRateOrCapacity() {
+        assertThatIllegalArgumentException().isThrownBy(() -> chute("CH-03", "A", RunState.RUNNING, -1, 40, false));
+        assertThatIllegalArgumentException().isThrownBy(() -> chute("CH-03", "A", RunState.RUNNING, 20, -1, false));
+        assertThatCode(() -> chute("CH-03", "A", RunState.RUNNING, 0, 0, false)).doesNotThrowAnyException();
     }
 
     @ParameterizedTest
