@@ -356,6 +356,52 @@ class PlantSimulatorTest {
     }
 
     @Test
+    void reassignRejects_unknownTarget() {
+        assertThat(sim.reassign(cmd(), "AMR-01", "AMR-09")).isFalse();
+        assertThat(robot("AMR-01").jobs()).isEqualTo(2);
+    }
+
+    @Test
+    void reassign_movesOnlyWhatTheTargetHasRoomFor() {
+        sim.reassign(cmd(), "AMR-01", "AMR-02");
+        assertThat(robot("AMR-02").jobs()).isEqualTo(4);
+
+        assertThat(sim.reassign(cmd(), "AMR-02", "AMR-03")).isTrue();
+
+        assertThat(robot("AMR-02").jobs()).isEqualTo(2);
+        assertThat(robot("AMR-03").jobs()).isEqualTo(4);
+    }
+
+    @Test
+    void replayedRestart_afterReset_doesNotMoveAStoppedConveyor() {
+        jamUntilConveyorStops();
+        sim.divert(cmd(), 3, 4);
+        UUID restart = cmd();
+        assertThat(sim.restart(restart, "CV-3")).isTrue();
+        sim.reset();
+        sim.start("worker-in-zone");
+        sim.drainEvents();
+
+        assertThat(sim.restart(restart, "CV-3")).isTrue();
+
+        assertThat(plc("CV-3").run()).isZero();
+        assertThat(sim.drainEvents()).isEmpty();
+    }
+
+    @Test
+    void replayedDivert_afterAutoRelease_doesNotDivertAgain() {
+        jamUntilConveyorStops();
+        UUID divert = cmd();
+        sim.divert(divert, 3, 4);
+        ticks(60);
+        assertThat(sim.snapshot().reroutes()).isEmpty();
+
+        assertThat(sim.divert(divert, 3, 4)).isTrue();
+
+        assertThat(sim.snapshot().reroutes()).isEmpty();
+    }
+
+    @Test
     void restartRejects_unknownConveyor() {
         assertThat(sim.restart(cmd(), "SR-1")).isFalse();
     }
@@ -463,6 +509,15 @@ class PlantSimulatorTest {
         sim.reset();
         assertThat(sim.drainEvents()).extracting(e -> e.equipmentId() + ":" + e.code())
                 .containsExactly("AMR-02:BATTERY_OK", "AMR-03:BATTERY_OK");
+    }
+
+    @Test
+    void reset_chuteClearedCarriesTheNewFill() {
+        jamUntilConveyorStops();
+
+        sim.reset();
+
+        assertThat(lastEvent("CH-03", "CHUTE_CLEARED").value()).isEqualTo(lane(3).fill());
     }
 
     @Test
