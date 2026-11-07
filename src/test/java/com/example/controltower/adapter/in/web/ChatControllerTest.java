@@ -21,6 +21,7 @@ import com.example.controltower.application.port.in.ChatEvent.Meta;
 import com.example.controltower.application.port.in.ChatEvent.Source;
 import com.example.controltower.application.port.in.ChatEvent.Sources;
 import com.example.controltower.domain.Actor;
+import com.example.controltower.domain.Role;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
@@ -31,12 +32,13 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import reactor.core.publisher.Flux;
 
-@WebMvcTest(ChatController.class)
+@WebMvcTest({ChatController.class, SessionController.class})
 @ExtendWith(OutputCaptureExtension.class)
 class ChatControllerTest {
 
@@ -89,6 +91,38 @@ class ChatControllerTest {
         streamOk("{\"message\":\"hi\"}");
 
         verify(service).stream(any(UUID.class), eq("hi"), eq(Actor.ANONYMOUS)); // any(UUID.class)는 null에 매치되지 않는다
+    }
+
+    @Test
+    void chatPassesSessionActor() throws Exception {
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(post("/api/session")
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountId\":\"operator\"}"))
+                .andExpect(status().isOk());
+
+        var started = mvc.perform(post("/api/chat/stream")
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"hi\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mvc.perform(asyncDispatch(started)).andExpect(status().isOk());
+
+        verify(service).stream(any(UUID.class), eq("hi"), eq(new Actor("operator", Role.OPERATOR)));
+    }
+
+    @Test
+    void chatAnonymousStillWorks() throws Exception {
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
+
+        var result = streamOk("{\"message\":\"hi\"}").andReturn();
+
+        verify(service).stream(any(UUID.class), eq("hi"), eq(Actor.ANONYMOUS));
+        assertThat(result.getResponse().getContentAsString()).contains("event:done");
+        assertThat(result.getRequest().getSession(false)).isNull(); // 비로그인 대화가 세션을 만들지 않는다
     }
 
     @Test
