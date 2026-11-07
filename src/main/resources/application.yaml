@@ -1,5 +1,5 @@
 spring:
-  application.name: consult
+  application.name: control-tower
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/consult}
     username: ${DB_USER:consult}

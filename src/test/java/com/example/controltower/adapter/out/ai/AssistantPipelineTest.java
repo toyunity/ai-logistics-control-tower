@@ -6,6 +6,7 @@ import static com.example.controltower.support.FakeChatModel.nullText;
 import static com.example.controltower.support.FakeChatModel.text;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
@@ -13,7 +14,9 @@ import com.example.controltower.application.port.in.ChatEvent.Failed;
 import com.example.controltower.application.port.in.ChatEvent.Meta;
 import com.example.controltower.application.port.in.ChatEvent.Source;
 import com.example.controltower.application.port.in.ChatEvent.Sources;
+import com.example.controltower.application.service.AssistantChatService;
 import com.example.controltower.config.ControlTowerProperties;
+import com.example.controltower.domain.Actor;
 import com.example.controltower.support.FakeChatModel;
 import com.example.controltower.support.FakeEmbeddingModel;
 import java.time.Duration;
@@ -35,7 +38,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 import reactor.core.publisher.Flux;
 
-class ChatServiceTest {
+class AssistantPipelineTest {
 
     private static final Document REFUND = Document.builder()
             .id("refund-policy")
@@ -46,7 +49,7 @@ class ChatServiceTest {
     private final UUID id = UUID.randomUUID();
     private final FakeChatModel model = new FakeChatModel();
     private final InMemoryChatMemoryRepository repository = new InMemoryChatMemoryRepository();
-    private final ChatService service = service(faqStore());
+    private final AssistantChat service = service(faqStore());
 
     private VectorStore faqStore() {
         SimpleVectorStore store = SimpleVectorStore.builder(new FakeEmbeddingModel()).build();
@@ -54,23 +57,23 @@ class ChatServiceTest {
         return store;
     }
 
-    private ChatService service(VectorStore store) {
+    private AssistantChat service(VectorStore store) {
         return service(store, Duration.ofSeconds(30));
     }
 
-    private ChatService service(VectorStore store, Duration idleTimeout) {
+    private AssistantChat service(VectorStore store, Duration idleTimeout) {
         var props = new ControlTowerProperties("chat-model", "rewrite-model", 1000, 3, 0.5, idleTimeout, "test-index");
-        ChatClient client = new AssistantConfig().consultChatClient(
+        ChatClient client = new AssistantConfig().assistantChatClient(
                 ChatClient.builder(model),
                 ChatClient.builder(model),
                 MessageWindowChatMemory.builder().chatMemoryRepository(repository).build(),
                 store,
                 props);
-        return new ChatService(client, props);
+        return new AssistantChatService(new SpringAiAssistant(client), idleTimeout);
     }
 
     private List<ChatEvent> run(String message) {
-        return service.stream(id, message).collectList().block();
+        return service.stream(id, message, Actor.ANONYMOUS).collectList().block();
     }
 
     private void enqueue(ChatResponse... chunks) {
@@ -207,7 +210,7 @@ class ChatServiceTest {
         model.enqueueStream(Flux.never());
 
         List<ChatEvent> events = service(faqStore(), Duration.ofMillis(200))
-                .stream(id, "환불 되나요")
+                .stream(id, "환불 되나요", Actor.ANONYMOUS)
                 .collectList()
                 .block(Duration.ofSeconds(5));
 
@@ -221,7 +224,7 @@ class ChatServiceTest {
         model.enqueueStream(Flux.range(1, 15).delayElements(Duration.ofMillis(50)).map(i -> text("조각" + i)));
 
         List<ChatEvent> events = service(faqStore(), Duration.ofMillis(500))
-                .stream(id, "환불 되나요")
+                .stream(id, "환불 되나요", Actor.ANONYMOUS)
                 .collectList()
                 .block(Duration.ofSeconds(5));
 
@@ -247,7 +250,7 @@ class ChatServiceTest {
             }
         };
 
-        List<ChatEvent> events = service(broken).stream(id, "환불 되나요").collectList().block();
+        List<ChatEvent> events = service(broken).stream(id, "환불 되나요", Actor.ANONYMOUS).collectList().block();
 
         assertThat(events).hasSize(2);
         assertThat(events.get(0)).isEqualTo(new Meta(id));
@@ -280,7 +283,7 @@ class ChatServiceTest {
     @Test
     void nextTurnWorksAfterCancelledStream() {
         enqueue(text("첫"), text("답변"), finish("end_turn"));
-        service.stream(id, "환불 되나요").take(2).collectList().block();
+        service.stream(id, "환불 되나요", Actor.ANONYMOUS).take(2).collectList().block();
 
         enqueue(text("네"), finish("end_turn"));
         model.enqueueCall("환불 처리 기간");

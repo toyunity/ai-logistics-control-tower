@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.example.controltower.adapter.out.ai.ChatService;
+import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
@@ -20,6 +20,7 @@ import com.example.controltower.application.port.in.ChatEvent.Failed;
 import com.example.controltower.application.port.in.ChatEvent.Meta;
 import com.example.controltower.application.port.in.ChatEvent.Source;
 import com.example.controltower.application.port.in.ChatEvent.Sources;
+import com.example.controltower.domain.Actor;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
@@ -42,11 +43,11 @@ class ChatControllerTest {
     private static final UUID ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     @Autowired MockMvc mvc;
-    @MockitoBean ChatService service;
+    @MockitoBean AssistantChat service;
 
     @Test
     void writesEventNamesAndPayloads() throws Exception {
-        when(service.stream(eq(ID), eq("hi"))).thenReturn(Flux.just(
+        when(service.stream(eq(ID), eq("hi"), eq(Actor.ANONYMOUS))).thenReturn(Flux.just(
                 new Meta(ID),
                 new Sources(List.of(new Source("a", "q", 0.9))),
                 new Delta(" "),
@@ -65,7 +66,7 @@ class ChatControllerTest {
 
     @Test
     void setsNoBufferingHeaders() throws Exception {
-        when(service.stream(any(), any())).thenReturn(Flux.just(new Done()));
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
 
         streamOk("{\"message\":\"hi\"}")
                 .andExpect(header().string("X-Accel-Buffering", "no"))
@@ -74,30 +75,30 @@ class ChatControllerTest {
 
     @Test
     void usesGivenConversationId() throws Exception {
-        when(service.stream(any(), any())).thenReturn(Flux.just(new Done()));
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
 
         streamOk("{\"conversationId\":\"" + ID + "\",\"message\":\"hi\"}");
 
-        verify(service).stream(ID, "hi");
+        verify(service).stream(ID, "hi", Actor.ANONYMOUS);
     }
 
     @Test
     void generatesConversationIdWhenMissing() throws Exception {
-        when(service.stream(any(), any())).thenReturn(Flux.just(new Done()));
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
 
         streamOk("{\"message\":\"hi\"}");
 
-        verify(service).stream(any(UUID.class), eq("hi")); // any(UUID.class)는 null에 매치되지 않는다
+        verify(service).stream(any(UUID.class), eq("hi"), eq(Actor.ANONYMOUS)); // any(UUID.class)는 null에 매치되지 않는다
     }
 
     @Test
     void exactly2000CharsIsAccepted() throws Exception {
-        when(service.stream(any(), any())).thenReturn(Flux.just(new Done()));
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(new Done()));
         String message = "가".repeat(2000);
 
         streamOk("{\"message\":\"" + message + "\"}");
 
-        verify(service).stream(any(UUID.class), eq(message));
+        verify(service).stream(any(UUID.class), eq(message), eq(Actor.ANONYMOUS));
     }
 
     @Test

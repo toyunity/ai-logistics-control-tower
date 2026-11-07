@@ -9,7 +9,9 @@ import com.example.controltower.application.port.in.ChatEvent;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
 import com.example.controltower.application.port.in.ChatEvent.Sources;
+import com.example.controltower.application.service.AssistantChatService;
 import com.example.controltower.config.ControlTowerProperties;
+import com.example.controltower.domain.Actor;
 import com.example.controltower.support.FakeAiConfig;
 import com.example.controltower.support.FakeChatModel;
 import com.example.controltower.support.FakeEmbeddingModel;
@@ -60,7 +62,7 @@ class ToolLoopTest {
     void setUp() {
         model.reset();
         id = UUID.randomUUID();
-        client = new AssistantConfig().consultChatClient(
+        client = new AssistantConfig().assistantChatClient(
                 ChatClient.builder(
                                 model,
                                 ObservationRegistry.NOOP,
@@ -84,7 +86,10 @@ class ToolLoopTest {
     }
 
     private List<ChatEvent> run(String message) {
-        return new ChatService(client, props).stream(id, message).collectList().block();
+        return new AssistantChatService(new SpringAiAssistant(client), props.streamIdleTimeout())
+                .stream(id, message, Actor.ANONYMOUS)
+                .collectList()
+                .block();
     }
 
     @Test
@@ -119,7 +124,7 @@ class ToolLoopTest {
     void toolContextReachesToolOnBlockingCapableThread() {
         enqueueToolLoop();
 
-        // ChatService는 아직 요청별 컨텍스트를 넘기지 않으므로 요청 단위 경로를 직접 확인한다.
+        // SpringAiAssistant는 아직 요청별 컨텍스트를 넘기지 않으므로 요청 단위 경로를 직접 확인한다.
         client.prompt()
                 .user("환불 되나요")
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id.toString()))

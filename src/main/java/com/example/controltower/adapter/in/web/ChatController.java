@@ -1,7 +1,8 @@
 package com.example.controltower.adapter.in.web;
 
-import com.example.controltower.adapter.out.ai.ChatService;
+import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
+import com.example.controltower.domain.Actor;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -18,10 +19,10 @@ import reactor.core.publisher.Flux;
 @RestController
 public class ChatController {
 
-    private final ChatService chatService;
+    private final AssistantChat assistantChat;
 
-    public ChatController(ChatService chatService) {
-        this.chatService = chatService;
+    public ChatController(AssistantChat assistantChat) {
+        this.assistantChat = assistantChat;
     }
 
     record ChatRequest(UUID conversationId, @NotBlank @Size(max = 2000) String message) {}
@@ -32,7 +33,7 @@ public class ChatController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header("X-Accel-Buffering", "no")
-                .body(chatService.stream(id, request.message()).map(ChatController::toSse));
+                .body(assistantChat.stream(id, request.message(), Actor.ANONYMOUS).map(ChatController::toSse));
     }
 
     private static ServerSentEvent<Object> toSse(ChatEvent event) {

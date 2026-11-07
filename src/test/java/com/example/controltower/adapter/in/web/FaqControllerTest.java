@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.controltower.adapter.out.knowledge.VectorKnowledgeSearch;
 import com.example.controltower.config.ControlTowerProperties;
 import java.util.List;
 import java.util.Map;
@@ -16,10 +17,12 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(FaqController.class)
+@Import(VectorKnowledgeSearch.class) // 문서를 응답으로 옮기는 매핑까지 함께 검증한다
 @EnableConfigurationProperties(ControlTowerProperties.class) // 슬라이스 테스트에는 @ConfigurationPropertiesScan이 적용되지 않는다
 class FaqControllerTest {
 

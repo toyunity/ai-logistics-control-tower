@@ -50,7 +50,7 @@ public class AssistantConfig {
             """;
 
     @Bean
-    ChatClient consultChatClient(
+    ChatClient assistantChatClient(
             ChatClient.Builder main,
             ChatClient.Builder rewriter,
             ChatMemory memory,
