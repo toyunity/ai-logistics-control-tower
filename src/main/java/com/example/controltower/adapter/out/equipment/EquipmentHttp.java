@@ -15,6 +15,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -27,7 +28,9 @@ import tools.jackson.databind.json.JsonMapper;
 class EquipmentHttp {
 
     // 빠진 값이나 어긋난 타입이 0으로 읽히면 안전 판단이 정상으로 기운다. 제조사가 필드를 더하는 것은 허용한다.
+    // 한계: 실수 필드는 문자열 "NaN"과 "Infinity"를 받으므로 범위는 어댑터가 따로 검사한다.
     private static final JsonMapper STRICT = JsonMapper.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
             .enable(DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES)
             .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
@@ -54,7 +57,7 @@ class EquipmentHttp {
     /** 번역까지 여기서 감싸므로 도메인 레코드의 검증 실패도 게이트웨이 장애가 된다. 값은 URI 템플릿으로 넣어 경로를 벗어나지 못한다. */
     <T, R> R read(String path, Class<T> wire, Function<T, R> translate, Object... uriVariables) {
         try {
-            String json = client.get().uri(baseUrl() + path, uriVariables).retrieve().body(String.class);
+            String json = client.get().uri(url(path, uriVariables), uriVariables).retrieve().body(String.class);
             return translate.apply(STRICT.readValue(json, wire));
         } catch (RuntimeException e) {
             throw unavailable();
@@ -62,7 +65,7 @@ class EquipmentHttp {
     }
 
     void send(String path, Object body, Object... uriVariables) {
-        String url = baseUrl() + path;
+        String url = url(path, uriVariables);
         boolean succeeded;
         try {
             succeeded = client.post()
@@ -97,7 +100,17 @@ class EquipmentHttp {
                 || cause instanceof UnknownHostException
                 || (cause instanceof SocketTimeoutException
                         && cause.getMessage() != null
-                        && cause.getMessage().startsWith("Connect"));
+                        && cause.getMessage().regionMatches(true, 0, "connect", 0, 7));
+    }
+
+    // 인코딩은 점을 건드리지 않아 서버가 점 세그먼트를 접으면 다른 경로에 닿는다. ID는 모델 인자에서 온다.
+    private String url(String path, Object[] uriVariables) {
+        for (Object variable : uriVariables) {
+            if (".".equals(variable) || "..".equals(variable)) {
+                throw unavailable();
+            }
+        }
+        return baseUrl() + path;
     }
 
     // 임의 포트는 서버가 뜬 뒤에야 정해지므로 호출할 때마다 읽는다.

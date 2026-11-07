@@ -70,6 +70,9 @@ public class VendorBSorters implements Sorters {
     }
 
     private static ChuteStatus chute(Lane lane) {
+        if (lane.fill() < 0 || lane.fill() > 100) {
+            throw new IllegalArgumentException("fill out of range");
+        }
         return new ChuteStatus(
                 chuteId(lane.laneNo()),
                 lane.grp(),

@@ -36,6 +36,10 @@ public class FleetRobots implements RobotFleet {
     }
 
     private static RobotStatus translate(Robot robot) {
+        // 범위 밖 배터리가 정상 값으로 읽히면 저전력 거절을 통과한다. 부정 비교는 NaN을 놓치므로 이렇게 쓴다.
+        if (!(robot.soc() >= 0 && robot.soc() <= 1) || robot.jobs() < 0 || robot.maxJobs() < 0) {
+            throw new IllegalArgumentException("robot telemetry out of range");
+        }
         return new RobotStatus(
                 robot.name(), state(robot.mode()), (int) Math.round(robot.soc() * 100), robot.jobs(), robot.maxJobs());
     }
