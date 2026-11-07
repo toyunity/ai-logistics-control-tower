@@ -158,16 +158,13 @@ class PlantSimulatorTest {
         assertThat(backlog).isPositive();
         ticks(1);
         assertThat(sim.snapshot().backlog()).isGreaterThan(backlog);
-    }
 
-    @Test
-    void chuteJam_spreadsUpstreamInOrder() {
-        sim.start("chute-jam");
+        // 적체는 수치로만 번진다. 상류 설비가 멈추면 조치 한 번으로 끝나지 않는다.
         ticks(60);
-
-        assertThat(seenCodes()).containsSubsequence("CV-3:STOPPED", "CV-2:STOPPED", "CV-1:STOPPED");
-        assertThat(plc("CV-2").alarm()).isEqualTo(101);
-        assertThat(plc("CV-1").alarm()).isEqualTo(101);
+        assertThat(sim.snapshot().backlog()).isGreaterThan(backlog);
+        assertThat(plc("CV-2").run()).isEqualTo(1);
+        assertThat(plc("CV-1").run()).isEqualTo(1);
+        assertThat(seenCodes()).doesNotContain("CV-2:STOPPED", "CV-1:STOPPED");
     }
 
     @Test
@@ -191,6 +188,17 @@ class PlantSimulatorTest {
         assertThat(lane(3).rate()).isEqualTo(20);
         assertThat(lane(4).rate()).isEqualTo(20);
         assertThat(sim.snapshot().lanes().stream().mapToInt(SimSnapshot.Lane::rate).sum()).isEqualTo(80);
+    }
+
+    @Test
+    void hold_refusesRestartOfEveryConveyor() {
+        sim.start("chute-jam");
+        ticks(2);
+        assertThat(sim.snapshot().opStatus()).isEqualTo("HOLD");
+
+        assertThat(sim.restart(cmd(), "CV-1")).isFalse();
+        assertThat(sim.restart(cmd(), "CV-2")).isFalse();
+        assertThat(sim.restart(cmd(), "CV-3")).isFalse();
     }
 
     @Test
@@ -276,19 +284,11 @@ class PlantSimulatorTest {
         assertThat(sim.snapshot().backlog()).isLessThan(stopped);
         ticks(200);
         assertThat(sim.snapshot().backlog()).isZero();
-    }
-
-    @Test
-    void restartedConveyor_isNotStoppedAgainByTheSameBacklog() {
-        jamUntilConveyorStops();
-        assertThat(plc("CV-2").run()).isZero();
-        sim.divert(cmd(), 3, 4);
-        sim.restart(cmd(), "CV-2");
-
-        ticks(5);
-
-        assertThat(plc("CV-3").run()).isZero();
-        assertThat(plc("CV-2").run()).isEqualTo(1);
+        assertThat(sim.snapshot().conveyors()).allSatisfy(c -> {
+            assertThat(c.run()).isEqualTo(1);
+            assertThat(c.alarm()).isZero();
+        });
+        assertThat(seenCodes().stream().filter(c -> c.endsWith(":RESTARTED"))).containsExactly("CV-3:RESTARTED");
     }
 
     @Test
