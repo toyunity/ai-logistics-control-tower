@@ -9,6 +9,7 @@ import com.example.controltower.application.port.out.Sorters;
 import com.example.controltower.domain.ChuteStatus;
 import com.example.controltower.domain.ConveyorStatus;
 import com.example.controltower.domain.Incident;
+import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.RobotStatus;
 import com.example.controltower.domain.RunState;
 import com.example.controltower.domain.Severity;
@@ -140,15 +141,19 @@ public final class DetectAnomaliesService implements DetectAnomalies {
     }
 
     private Reading robotReading(Cycle cycle) {
-        List<RobotStatus> robots = fleet.all();
-        long low = robots.stream()
-                .filter(r -> isKnown(r.state()) && r.batteryPercent() < LOW_BATTERY_PERCENT)
+        List<RobotStatus> known = fleet.all().stream().filter(r -> isKnown(r.state())).toList();
+        long low = known.stream()
+                .filter(r -> r.batteryPercent() < LOW_BATTERY_PERCENT)
                 .count();
         if (low >= LOW_BATTERY_ROBOTS) {
             return new Reading(Map.of(FLEET, grade(FLEET, false, cycle)), Set.of());
         }
-        boolean allKnown = !robots.isEmpty() && robots.stream().allMatch(r -> isKnown(r.state()));
-        return new Reading(Map.of(), allKnown ? Set.of(FLEET) : Set.of());
+        long unknown = LineTopology.DEFAULT.all().stream()
+                .filter(LineTopology.DEFAULT::isRobot)
+                .filter(id -> known.stream().noneMatch(r -> r.id().equals(id)))
+                .count();
+        // 모르는 로봇이 전부 저전압이어도 기준에 못 미칠 때만 해소로 본다. 한 대가 충전 중이라고 건이 묶이지 않는다.
+        return new Reading(Map.of(), low + unknown < LOW_BATTERY_ROBOTS ? Set.of(FLEET) : Set.of());
     }
 
     private Severity grade(String id, boolean stoppedNow, Cycle cycle) {
