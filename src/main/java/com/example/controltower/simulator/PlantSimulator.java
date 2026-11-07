@@ -25,8 +25,6 @@ public final class PlantSimulator {
     private static final int STOP_AFTER_HOLD_TICKS = 5;
     private static final int BACKLOG_GROWTH = 8;
     private static final int BACKLOG_DRAIN = 10;
-    private static final int CV2_STOP_BACKLOG = 40;
-    private static final int CV1_STOP_BACKLOG = 80;
 
     // 재가동 확정까지 시간을 남기려고 천천히 비운다.
     private static final int CHUTE_DRAIN = 2;
@@ -216,20 +214,13 @@ public final class PlantSimulator {
         }
     }
 
+    // 상류로의 전파는 적체 수치로만 나타낸다. 설비까지 세우면 조치 순서가 재가동 한 번으로 끝나지 않는다.
     private void growOrShrinkBacklog() {
         SimState.Conveyor cv3 = state.conveyors.get("CV-3");
         if (cv3.run == 1) {
             state.backlog = Math.max(0, state.backlog - BACKLOG_DRAIN);
         } else if (cv3.alarm == ALARM_DOWNSTREAM_BLOCKED) {
-            int before = state.backlog;
             state.backlog += BACKLOG_GROWTH;
-            // 기준을 넘는 순간에만 멈춘다. 사람이 다시 돌린 설비를 같은 적체로 또 세우지 않는다.
-            if (before < CV2_STOP_BACKLOG && state.backlog >= CV2_STOP_BACKLOG) {
-                stop("CV-2", ALARM_DOWNSTREAM_BLOCKED);
-            }
-            if (before < CV1_STOP_BACKLOG && state.backlog >= CV1_STOP_BACKLOG) {
-                stop("CV-1", ALARM_DOWNSTREAM_BLOCKED);
-            }
         }
     }
 
