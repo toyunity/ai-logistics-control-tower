@@ -34,3 +34,6 @@ controltower:
   top-k: 3
   similarity-threshold: 0.4         # 측정값이 아닌 초기값. 보정 방법은 README 검증 상태 참고
   stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 시간 한도는 spring.ai.anthropic.timeout
+  simulator:
+    enabled: true
+    event-target: ""                # 비우면 실행 중인 서버 자신의 포트로 보낸다

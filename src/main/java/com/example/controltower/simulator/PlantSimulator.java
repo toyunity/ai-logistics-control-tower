@@ -127,6 +127,13 @@ public final class PlantSimulator {
         }
     }
 
+    /** 스캐너 상태는 이벤트로만 전달되므로 빈 DB에서 UNKNOWN으로 보이지 않게 기동 때 알린다. 이미 저하 중이면 그 이벤트를 덮지 않는다. */
+    public synchronized void announceScanner() {
+        if (state.readFailPercent == SimState.NORMAL_READ_FAIL_PERCENT) {
+            emit("SC-1", "READ_NORMAL", SimState.NORMAL_READ_FAIL_PERCENT);
+        }
+    }
+
     /** 거절한 명령은 기록하지 않는다. 원인이 풀린 뒤 같은 명령 ID로 다시 보낼 수 있어야 한다. */
     public synchronized boolean restart(UUID cmd, String id) {
         if (applied.contains(cmd)) {
