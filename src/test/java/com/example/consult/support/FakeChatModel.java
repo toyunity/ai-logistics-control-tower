@@ -10,7 +10,9 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import reactor.core.publisher.Flux;
 
 public class FakeChatModel implements ChatModel {
@@ -45,6 +47,12 @@ public class FakeChatModel implements ChatModel {
         calls.clear();
         prompts.clear();
         callCount = 0;
+    }
+
+    // ChatClient는 이 옵션을 기반으로 요청 옵션을 만든다. 도구용 옵션이 아니면 도구와 ToolCallingAdvisor가 모두 무시된다.
+    @Override
+    public ChatOptions getOptions() {
+        return ToolCallingChatOptions.builder().build();
     }
 
     @Override
@@ -84,6 +92,12 @@ public class FakeChatModel implements ChatModel {
         return new ChatResponse(List.of(new Generation(
                 new AssistantMessage(""),
                 ChatGenerationMetadata.builder().finishReason(reason).build())));
+    }
+
+    public static ChatResponse toolCall(String id, String name, String argsJson) {
+        var call = new AssistantMessage.ToolCall(id, "function", name, argsJson);
+        return new ChatResponse(List.of(new Generation(
+                AssistantMessage.builder().content("").toolCalls(List.of(call)).build())));
     }
 
     public static ChatResponse noGeneration() {
