@@ -118,7 +118,7 @@ public final class PlantSimulator {
             emit("SR-1", "LANE_CLEARED", old.holdLane);
         }
         old.reroutes.forEach(r -> emit("SR-1", "DIVERT_RELEASED", r.src()));
-        old.lanes.stream().filter(SimState.Lane::full).forEach(l -> emit(l.id(), "CHUTE_CLEARED", null));
+        old.lanes.stream().filter(SimState.Lane::full).forEach(l -> emit(l.id(), "CHUTE_CLEARED", state.lane(l.no).fill));
         old.robots.values().stream()
                 .filter(r -> !r.mode.equals("AUTO"))
                 .forEach(r -> emit(r.name, "BATTERY_OK", state.robots.get(r.name).soc));

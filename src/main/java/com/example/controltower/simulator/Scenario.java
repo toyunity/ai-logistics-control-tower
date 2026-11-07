@@ -16,10 +16,6 @@ public enum Scenario {
         this.label = label;
     }
 
-    public String label() {
-        return label;
-    }
-
     public static Optional<Scenario> byName(String name) {
         return Arrays.stream(values()).filter(s -> s.label.equals(name)).findFirst();
     }
