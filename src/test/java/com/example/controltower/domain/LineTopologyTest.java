@@ -15,6 +15,15 @@ class LineTopologyTest {
     private static final List<String> ROBOTS = List.of("AMR-01", "AMR-02", "AMR-03", "AMR-04");
 
     @Test
+    void allListsEveryEquipmentInLineOrder() {
+        assertThat(LINE.all())
+                .startsWith("CV-1", "CV-2", "CV-3", "SC-1", "SR-1")
+                .containsSequence(CHUTES)
+                .endsWith(ROBOTS.toArray(String[]::new))
+                .hasSize(5 + CHUTES.size() + ROBOTS.size());
+    }
+
+    @Test
     void upstreamIsNearestFirst() {
         assertThat(LINE.upstreamOf("CV-1")).isEmpty();
         assertThat(LINE.upstreamOf("CV-3")).containsExactly("CV-2", "CV-1");
