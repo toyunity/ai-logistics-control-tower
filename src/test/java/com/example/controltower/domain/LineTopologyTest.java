@@ -54,6 +54,26 @@ class LineTopologyTest {
         assertThat(LINE.zoneOf(id)).contains(zone);
     }
 
+    @Test
+    void equipmentKindComesFromTopology() {
+        assertThat(LINE.isConveyor("CV-3")).isTrue();
+        assertThat(LINE.isConveyor("SR-1")).isFalse();
+        assertThat(LINE.isConveyor("SC-1")).isFalse();
+        assertThat(LINE.isConveyor("CH-03")).isFalse();
+        assertThat(LINE.isChute("CH-06")).isTrue();
+        assertThat(LINE.isChute("AMR-01")).isFalse();
+        assertThat(LINE.isRobot("AMR-04")).isTrue();
+        assertThat(LINE.isRobot("CV-1")).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CV-4", "CH-07", "AMR-05", "cv-1", ""})
+    void unknownIdHasNoKind(String id) {
+        assertThat(LINE.isConveyor(id)).isFalse();
+        assertThat(LINE.isChute(id)).isFalse();
+        assertThat(LINE.isRobot(id)).isFalse();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"CV-4", "CH-07", "AMR-05", "cv-1", ""})
     void unknownEquipmentIsEmpty(String id) {
