@@ -12,7 +12,10 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.client.RestClient;
 
-/** 1초 틱과 이벤트 전송. 스케줄러 스레드 하나만 큐를 만지므로 컨트롤러에서 전송을 시작하면 안 된다. */
+/**
+ * 1초 틱과 이벤트 전송. 전송이 늦어도 안전 신호 시각이 3초 한도를 넘으면 안 되므로 작업을 나눈다. 스레드가 하나면 나눈 의미가 없다.
+ * 큐는 전송 작업만 만지므로 컨트롤러에서 전송을 시작하면 안 된다.
+ */
 public class SimulatorRunner {
 
     private static final Logger log = System.getLogger(SimulatorRunner.class.getName());
@@ -39,13 +42,13 @@ public class SimulatorRunner {
             announced = true;
             simulator.announceScanner();
         }
-        queue.addAll(simulator.drainEvents());
-        push();
     }
 
     // 순서를 지키려고 첫 실패에서 멈춘다. 그래서 수신 측이 계속 4xx로 거절하는 이벤트가 있으면 뒤 이벤트까지 밀린다.
     // 응답 유실로 재전송돼도 수신 측이 이벤트 ID로 거른다.
-    private void push() {
+    @Scheduled(fixedDelay = 1000)
+    public void push() {
+        queue.addAll(simulator.drainEvents());
         String target = eventTarget();
         if (target == null) {
             return;
