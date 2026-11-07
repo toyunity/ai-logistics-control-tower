@@ -148,18 +148,23 @@ class ControlApiIT {
         assertThat(conveyors.get("CV-3").state()).isEqualTo(RunState.STOPPED);
     }
 
+    // 우회 카드의 상태 요약에는 차단·만재 여부가 없어 리셋 뒤에도 유효하다. 리셋으로 이산 상태가 바뀌는 재가동 카드로 본다.
     @Test
     void staleCardAfterSimReset_409() throws Exception {
         loginOperator();
         startChuteJamUntilBlocked();
-        PendingCommand card = proposedDivert();
+        await().atMost(Duration.ofSeconds(30)).until(() -> conveyors.get("CV-3").state() == RunState.STOPPED);
+        assertThat(confirm(proposedDivert().id()).statusCode()).isEqualTo(200);
+        ProposalResult restart = propose.propose(new CommandSpec.Restart("CV-3"), OPERATOR);
+        assertThat(restart).isInstanceOf(ProposalResult.Proposed.class);
+        UUID id = ((ProposalResult.Proposed) restart).command().id();
         assertThat(post("/sim/reset", "").statusCode()).isEqualTo(200);
 
-        HttpResponse<String> response = confirm(card.id());
+        HttpResponse<String> response = confirm(id);
 
         assertThat(response.statusCode()).isEqualTo(409);
         assertThat(json(response).get("status").asString()).isEqualTo("FAILED");
-        assertThat(sim.snapshot().reroutes()).isEmpty();
+        assertThat(pending.find(id).orElseThrow().status()).isEqualTo(CommandStatus.FAILED);
     }
 
     // 스캐너 상태는 이벤트로만 오므로 시뮬레이터 전송, 수신 검증, 감지가 모두 돌아야 통과한다.
