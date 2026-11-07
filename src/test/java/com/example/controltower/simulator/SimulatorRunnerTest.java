@@ -53,6 +53,11 @@ class SimulatorRunnerTest {
         server.stop(0);
     }
 
+    private void cycle() {
+        runner.tick();
+        runner.push();
+    }
+
     private String serverUrl() {
         return "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -70,8 +75,8 @@ class SimulatorRunnerTest {
     void firstTick_announcesScannerOnce_inTheGatewayFormat() {
         env.setProperty(TARGET_KEY, serverUrl());
 
-        runner.tick();
-        runner.tick();
+        cycle();
+        cycle();
 
         assertThat(received).hasSize(1);
         JsonNode event = json.readTree(received.peek());
@@ -88,7 +93,7 @@ class SimulatorRunnerTest {
         env.setProperty(TARGET_KEY, serverUrl());
         sim.start("scanner-degraded");
 
-        runner.tick();
+        cycle();
 
         assertThat(receivedKeys()).containsExactly("SC-1:READ_DEGRADED");
     }
@@ -98,7 +103,7 @@ class SimulatorRunnerTest {
         env.setProperty(TARGET_KEY, serverUrl());
         sim.start("robot-battery");
 
-        runner.tick();
+        cycle();
 
         assertThat(receivedKeys()).containsExactly("AMR-02:BATTERY_LOW", "AMR-03:BATTERY_LOW", "SC-1:READ_NORMAL");
     }
@@ -110,11 +115,11 @@ class SimulatorRunnerTest {
         statuses.add(200);
         statuses.add(500);
 
-        runner.tick();
+        cycle();
 
         assertThat(receivedKeys()).containsExactly("AMR-02:BATTERY_LOW", "AMR-03:BATTERY_LOW");
 
-        runner.tick();
+        cycle();
 
         assertThat(receivedKeys()).containsExactly(
                 "AMR-02:BATTERY_LOW", "AMR-03:BATTERY_LOW", "AMR-03:BATTERY_LOW", "SC-1:READ_NORMAL");
@@ -124,11 +129,11 @@ class SimulatorRunnerTest {
     void blankTarget_waitsForTheServerPort_thenUsesLoopback() {
         env.setProperty(TARGET_KEY, " ");
 
-        runner.tick();
+        cycle();
         assertThat(received).isEmpty();
 
         env.setProperty("local.server.port", String.valueOf(server.getAddress().getPort()));
-        runner.tick();
+        cycle();
 
         assertThat(receivedKeys()).containsExactly("SC-1:READ_NORMAL");
     }
@@ -137,12 +142,12 @@ class SimulatorRunnerTest {
     void unreachableTarget_isSilentAboveDebug_andKeepsTheQueue(CapturedOutput output) {
         env.setProperty(TARGET_KEY, "http://127.0.0.1:1");
 
-        runner.tick();
+        cycle();
 
         assertThat(output).doesNotContain("WARN").doesNotContain("ERROR");
 
         env.setProperty(TARGET_KEY, serverUrl());
-        runner.tick();
+        cycle();
         assertThat(receivedKeys()).containsExactly("SC-1:READ_NORMAL");
     }
 
@@ -150,9 +155,8 @@ class SimulatorRunnerTest {
     void tickAdvancesTheSimulatorEvenWithoutATarget() {
         sim.start("chute-jam");
 
-        for (int i = 0; i < 2; i++) {
-            runner.tick();
-        }
+        runner.tick();
+        runner.tick();
 
         assertThat(sim.snapshot().opStatus()).isEqualTo("HOLD");
     }

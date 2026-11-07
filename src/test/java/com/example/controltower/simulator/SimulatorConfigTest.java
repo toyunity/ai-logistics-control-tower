@@ -61,10 +61,10 @@ class SimulatorConfigTest {
     }
 
     @Test
-    void enabled_schedulesTheTicker() {
+    void enabled_schedulesTickAndPushSeparately() {
         contexts.withPropertyValues("controltower.simulator.enabled=true").run(ctx -> {
             assertThat(ctx).hasNotFailed();
-            assertThat(ctx.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).hasSize(1);
+            assertThat(ctx.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).hasSize(2);
             assertThat(ctx).hasSingleBean(VendorAController.class);
         });
     }
