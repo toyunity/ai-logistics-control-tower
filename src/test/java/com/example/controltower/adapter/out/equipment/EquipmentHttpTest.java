@@ -173,10 +173,24 @@ class EquipmentHttpTest {
         assertThat(EquipmentHttp.neverReached(new NoRouteToHostException())).isTrue();
         assertThat(EquipmentHttp.neverReached(new UnknownHostException())).isTrue();
         assertThat(EquipmentHttp.neverReached(new SocketTimeoutException("Connect timed out"))).isTrue();
+        assertThat(EquipmentHttp.neverReached(new SocketTimeoutException("connect timed out"))).isTrue();
 
         assertThat(EquipmentHttp.neverReached(new SocketTimeoutException("Read timed out"))).isFalse();
         assertThat(EquipmentHttp.neverReached(new SocketTimeoutException())).isFalse();
         assertThat(EquipmentHttp.neverReached(new SocketException("Connection reset"))).isFalse();
+    }
+
+    // 값은 인코딩되지만 점 세그먼트는 그대로 나가 서버가 경로를 접을 수 있다. ID는 모델 인자에서 온다.
+    @ParameterizedTest
+    @ValueSource(strings = {".", ".."})
+    void dotSegmentId_isAGatewayFailure_andNothingLeaves(String id) {
+        stub.reply("GET", "/device/" + id, 200, "{\"value\":7}");
+        stub.reply("POST", "/device/" + id, 200, "");
+
+        assertPlainGatewayFailure(() -> http.read(PATH, Wire.class, Wire::value, id));
+        assertPlainGatewayFailure(() -> http.send(PATH, BODY, id));
+
+        assertThat(stub.sent()).isEmpty();
     }
 
     @Test

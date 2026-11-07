@@ -116,6 +116,8 @@ class VendorBSortersTest extends SortersContract {
         "{\"opStatus\":\"ACTV\",\"lanes\":[{\"grp\":\"A\",\"fill\":1,\"cap\":1,\"rate\":1,\"st\":\"OK\"}],\"reroutes\":[]}",
         "{\"opStatus\":\"ACTV\",\"lanes\":[{\"laneNo\":3,\"grp\":null,\"fill\":1,\"cap\":1,\"rate\":1,\"st\":\"OK\"}],\"reroutes\":[]}",
         "{\"opStatus\":\"ACTV\",\"lanes\":[{\"laneNo\":3,\"grp\":\"A\",\"fill\":1,\"cap\":-1,\"rate\":1,\"st\":\"OK\"}],\"reroutes\":[]}",
+        "{\"opStatus\":\"ACTV\",\"lanes\":[{\"laneNo\":3,\"grp\":\"A\",\"fill\":101,\"cap\":1,\"rate\":1,\"st\":\"OK\"}],\"reroutes\":[]}",
+        "{\"opStatus\":\"ACTV\",\"lanes\":[{\"laneNo\":3,\"grp\":\"A\",\"fill\":-1,\"cap\":1,\"rate\":1,\"st\":\"OK\"}],\"reroutes\":[]}",
         "{\"opStatus\":\"ACTV\",\"lanes\":[],\"reroutes\":[{\"src\":3}]}",
         "{\"opStatus\":\"ACTV\",\"lanes\":[],\"reroutes\":[{\"src\":3,\"dst\":4},{\"src\":3,\"dst\":5}]}",
         "not json"

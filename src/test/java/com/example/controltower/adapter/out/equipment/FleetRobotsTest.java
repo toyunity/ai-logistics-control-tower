@@ -111,6 +111,15 @@ class FleetRobotsTest extends RobotFleetContract {
         "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"jobs\":0,\"maxJobs\":4}]",
         "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":0.5,\"maxJobs\":4}]",
         "[{\"name\":\"AMR-01\",\"mode\":null,\"soc\":0.5,\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":5,\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":25,\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":42949673.5,\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":-0.1,\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":\"NaN\",\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":\"Infinity\",\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":\"0.82\",\"jobs\":0,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":0.5,\"jobs\":-1,\"maxJobs\":4}]",
+        "[{\"name\":\"AMR-01\",\"mode\":\"AUTO\",\"soc\":0.5,\"jobs\":0,\"maxJobs\":-1}]",
         "{}",
         "not json"
     })

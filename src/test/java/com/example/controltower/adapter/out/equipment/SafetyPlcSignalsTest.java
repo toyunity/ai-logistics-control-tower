@@ -48,6 +48,7 @@ class SafetyPlcSignalsTest extends SafetySignalsContract {
 
     @ParameterizedTest
     @ValueSource(strings = {
+        "{\"estop\":1,\"estop\":0,\"presence\":0,\"ts\":1}",
         "{\"estop\":2,\"presence\":0,\"ts\":1}",
         "{\"estop\":0,\"presence\":-1,\"ts\":1}",
         "{\"estop\":true,\"presence\":0,\"ts\":1}",
