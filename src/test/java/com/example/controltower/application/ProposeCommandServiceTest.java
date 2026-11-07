@@ -125,8 +125,6 @@ class ProposeCommandServiceTest {
         return Stream.of(RESTART, DIVERT, REASSIGN, MAINTENANCE);
     }
 
-    // 권한
-
     @ParameterizedTest
     @MethodSource("allKinds")
     void viewerRejected(CommandSpec spec) {
@@ -152,8 +150,6 @@ class ProposeCommandServiceTest {
     void permissionIsCheckedBeforeEquipmentExists() {
         assertRejected(new Restart("CV-99"), Actor.ANONYMOUS, DenialCode.NOT_PERMITTED);
     }
-
-    // 대상 판정
 
     private static Stream<CommandSpec> notFoundSpecs() {
         return Stream.of(
@@ -217,8 +213,6 @@ class ProposeCommandServiceTest {
         assertThat(MAINTENANCE.targetId()).isEqualTo("SR-1");
     }
 
-    // 조회 실패
-
     @Test
     void safetyGatewayDown_rejectedUnknown() {
         safety.setFailing(true);
@@ -269,8 +263,6 @@ class ProposeCommandServiceTest {
         assertThat(new CommandOutcomeUnknownException("timeout", null)).isInstanceOf(GatewayUnavailableException.class);
     }
 
-    // 규칙 위임
-
     @Test
     void restartDeniedByPolicy_noCard() {
         safety.set(new SafetyStatus("Z1", false, true, NOW));
@@ -308,8 +300,6 @@ class ProposeCommandServiceTest {
         propose(MAINTENANCE);
         assertThat(safety.reads()).isZero();
     }
-
-    // 카드 저장
 
     @ParameterizedTest
     @MethodSource("allKinds")
@@ -434,7 +424,10 @@ class ProposeCommandServiceTest {
                 transactions[0]++;
                 savesAtEntry[0] = pending.saves();
                 statusAtEntry[0] = pending.all().getFirst().status();
-                return work.get();
+                T result = work.get();
+                assertThat(pending.saves()).isEqualTo(2);
+                assertThat(stored(first.id()).status()).isEqualTo(CommandStatus.SUPERSEDED);
+                return result;
             }
         };
 
@@ -443,11 +436,7 @@ class ProposeCommandServiceTest {
         assertThat(transactions[0]).isEqualTo(1);
         assertThat(savesAtEntry[0]).isEqualTo(1);
         assertThat(statusAtEntry[0]).isEqualTo(CommandStatus.PENDING);
-        assertThat(stored(first.id()).status()).isEqualTo(CommandStatus.SUPERSEDED);
-        assertThat(pending.saves()).isEqualTo(2);
     }
-
-    // 정비
 
     @Test
     void maintenanceOpenAlready_rejected() {
@@ -461,8 +450,6 @@ class ProposeCommandServiceTest {
         assertThat(propose(MAINTENANCE).status()).isEqualTo(CommandStatus.PENDING);
     }
 
-    // digest
-
     @Test
     void digestIgnoresNumbers() {
         PendingCommand first = propose(DIVERT);
@@ -470,6 +457,17 @@ class ProposeCommandServiceTest {
         sorters.set(sorter(RunState.RUNNING, 95, Map.of()));
 
         assertThat(propose(DIVERT).id()).isEqualTo(first.id());
+    }
+
+    @Test
+    void divertDigestIgnoresRateChange() {
+        PendingCommand first = propose(DIVERT);
+
+        sorters.set(new SorterStatus("SR-1", RunState.RUNNING, false, List.of(
+                new ChuteStatus("CH-03", "A", RunState.RUNNING, 60, 15, 40, false),
+                new ChuteStatus("CH-04", "A", RunState.RUNNING, 30, 25, 40, false)), Map.of()));
+
+        assertThat(propose(DIVERT).stateDigest()).isEqualTo(first.stateDigest());
     }
 
     @Test
@@ -529,6 +527,15 @@ class ProposeCommandServiceTest {
     }
 
     @Test
+    void reassignDigestChangesWithSourceRobotState() {
+        PendingCommand first = propose(REASSIGN);
+
+        fleet.set(robot("AMR-01", RunState.DEGRADED, 80, 5));
+
+        assertThat(propose(REASSIGN).stateDigest()).isNotEqualTo(first.stateDigest());
+    }
+
+    @Test
     void restartDigestHoldsConveyorStateAndSorterBlock() {
         assertThat(propose(RESTART).stateDigest()).contains("STOPPED").contains("blocked=false");
     }
@@ -537,8 +544,6 @@ class ProposeCommandServiceTest {
     void maintenanceDigestIsEmpty() {
         assertThat(propose(MAINTENANCE).stateDigest()).isEmpty();
     }
-
-    // 영향 문구
 
     @Test
     void divertImpactStatesServerFacts() {
@@ -565,8 +570,6 @@ class ProposeCommandServiceTest {
         assertThat(card.impact()).doesNotContain(injected.summary());
         assertThat(card.spec()).isEqualTo(injected);
     }
-
-    // 중심 주장: 제안은 설비에 아무것도 보내지 않는다
 
     @Test
     void proposeNeverSendsCommand() {
