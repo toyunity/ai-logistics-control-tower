@@ -14,8 +14,17 @@ import java.util.UUID;
 public class InMemoryPendingCommands implements PendingCommands {
 
     private final Map<UUID, PendingCommand> commands = new LinkedHashMap<>();
+    private final InMemoryCommandAudit audit;
     private int reads;
     private int saves;
+
+    public InMemoryPendingCommands() {
+        this(new InMemoryCommandAudit());
+    }
+
+    public InMemoryPendingCommands(InMemoryCommandAudit audit) {
+        this.audit = audit;
+    }
 
     public int reads() {
         return reads;

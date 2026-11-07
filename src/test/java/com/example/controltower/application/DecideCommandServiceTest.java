@@ -181,6 +181,23 @@ class DecideCommandServiceTest {
         assertRefusedUntouched(card, service.confirm(card.id(), new Actor("op-1", Role.VIEWER)), Outcome.FORBIDDEN);
     }
 
+    // 새 제안이 저장되면 옛 카드는 PENDING이 아니라 EXPIRED 행이 된다. 안내는 만료여야 한다.
+    @Test
+    void cardExpiredByANewProposal_stillSaysExpired() {
+        PendingCommand card = card(MAINTENANCE);
+        Clock later = Clock.offset(CLOCK, TTL);
+        new ProposeCommandService(
+                        conveyors, sorters, fleet, safety, pending, desk, unitOfWork, POLICY, LineTopology.DEFAULT, later, TTL)
+                .propose(MAINTENANCE, OPERATOR);
+
+        CommandResult result = service(later, unitOfWork, sorters).confirm(card.id(), OPERATOR);
+
+        assertThat(rowStatus(card)).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(result.outcome()).isEqualTo(Outcome.CONFLICT);
+        assertThat(result.status()).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(result.message()).contains("유효 시간");
+    }
+
     @Test
     void expired_conflict() {
         PendingCommand card = card(RESTART);
