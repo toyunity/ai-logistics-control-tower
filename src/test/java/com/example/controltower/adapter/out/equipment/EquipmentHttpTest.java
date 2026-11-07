@@ -3,6 +3,7 @@ package com.example.controltower.adapter.out.equipment;
 import static com.example.controltower.adapter.out.equipment.EquipmentStub.assertPlainGatewayFailure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.example.controltower.domain.CommandOutcomeUnknownException;
 import java.io.IOException;
@@ -144,6 +145,17 @@ class EquipmentHttpTest {
         assertThatThrownBy(this::send)
                 .isExactlyInstanceOf(CommandOutcomeUnknownException.class)
                 .hasNoCause();
+
+        assertThat(stub.sent()).hasSize(1);
+    }
+
+    // HttpURLConnection은 응답 전에 끊긴 POST를 조용히 다시 보낼 수 있다. 재가동이 두 번 나가면 안 된다.
+    @Test
+    void send_droppedConnection_isOutcomeUnknown_sentOnce() {
+        stub.drop("POST", DEVICE);
+
+        assertTimeout(EquipmentStub.READ_TIMEOUT, () -> assertThatThrownBy(this::send)
+                .isExactlyInstanceOf(CommandOutcomeUnknownException.class));
 
         assertThat(stub.sent()).hasSize(1);
     }

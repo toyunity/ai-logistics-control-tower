@@ -57,6 +57,7 @@ class EquipmentAdaptersSimulatorIT {
 
         SorterStatus held = sorters.get();
         assertThat(held.state()).isEqualTo(RunState.RUNNING);
+        assertThat(held.blocked()).isTrue();
         assertPlainGatewayFailure(() -> conveyors.restart(UUID.randomUUID(), "CV-3"));
 
         sorters.divert(UUID.randomUUID(), "CH-03", "CH-04");

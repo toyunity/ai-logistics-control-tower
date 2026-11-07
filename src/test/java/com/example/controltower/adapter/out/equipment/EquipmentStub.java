@@ -32,6 +32,7 @@ final class EquipmentStub implements AutoCloseable {
     private static final Reply NOT_FOUND = new Reply(404, "");
     private static final Reply UNAVAILABLE = new Reply(503, "");
     private static final Reply HANG = new Reply(0, "");
+    private static final Reply DROP = new Reply(0, "");
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     record Reply(int status, String body) {
@@ -73,6 +74,9 @@ final class EquipmentStub implements AutoCloseable {
                 closing.await(10, TimeUnit.SECONDS);
                 return;
             }
+            if (reply == DROP) {
+                return;
+            }
             byte[] bytes = reply.body().getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(reply.status(), bytes.length == 0 ? -1 : bytes.length);
             if (bytes.length > 0) {
@@ -93,6 +97,11 @@ final class EquipmentStub implements AutoCloseable {
 
     void hang(String method, String path) {
         on(method, path, b -> HANG);
+    }
+
+    /** 요청을 받고 응답 없이 연결을 끊는다. */
+    void drop(String method, String path) {
+        on(method, path, b -> DROP);
     }
 
     void goDown() {
