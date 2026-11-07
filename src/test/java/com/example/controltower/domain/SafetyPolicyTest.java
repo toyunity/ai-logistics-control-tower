@@ -68,6 +68,26 @@ class SafetyPolicyTest {
     }
 
     @Test
+    void restart_signalFromFutureOverMaxAge_denied() {
+        Optional<SafetyStatus> future = clearSignalAt(NOW.plusMillis(3001));
+        assertThat(policy.restart(STOPPED_CONVEYOR, CLEAR_SORTER, future, NOW))
+                .isEqualTo(denied(DenialCode.SAFETY_SIGNAL_STALE));
+    }
+
+    @Test
+    void restart_signalFromFutureExactlyMaxAge_allowed() {
+        Optional<SafetyStatus> edge = clearSignalAt(NOW.plusSeconds(3));
+        assertThat(policy.restart(STOPPED_CONVEYOR, CLEAR_SORTER, edge, NOW)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    void restart_signalFromOtherZone_denied() {
+        Optional<SafetyStatus> otherZone = Optional.of(new SafetyStatus("Z2", false, false, NOW));
+        assertThat(policy.restart(STOPPED_CONVEYOR, CLEAR_SORTER, otherZone, NOW))
+                .isEqualTo(denied(DenialCode.SAFETY_SIGNAL_UNKNOWN));
+    }
+
+    @Test
     void restart_emergencyStop_denied() {
         assertThat(policy.restart(STOPPED_CONVEYOR, CLEAR_SORTER, signal(true, false, NOW), NOW))
                 .isEqualTo(denied(DenialCode.EMERGENCY_STOP_ACTIVE));
@@ -104,6 +124,19 @@ class SafetyPolicyTest {
     @Test
     void restart_sorterBlocked_denied() {
         assertThat(policy.restart(STOPPED_CONVEYOR, sorter(RunState.RUNNING, true), clearSignalAt(NOW), NOW))
+                .isEqualTo(denied(DenialCode.SORTER_BLOCKED));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RunState.class, names = {"STOPPED", "FAULT", "DEGRADED", "OFFLINE"})
+    void restart_sorterNotRunning_denied(RunState state) {
+        assertThat(policy.restart(STOPPED_CONVEYOR, sorter(state, false), clearSignalAt(NOW), NOW))
+                .isEqualTo(denied(DenialCode.SORTER_NOT_RUNNING));
+    }
+
+    @Test
+    void restart_sorterBlockedAndNotRunning_reportsBlocked() {
+        assertThat(policy.restart(STOPPED_CONVEYOR, sorter(RunState.STOPPED, true), clearSignalAt(NOW), NOW))
                 .isEqualTo(denied(DenialCode.SORTER_BLOCKED));
     }
 
@@ -192,6 +225,12 @@ class SafetyPolicyTest {
     }
 
     @Test
+    void divert_sameChute_deniedBeforeOtherChecks() {
+        assertThat(policy.divert(sorter(RunState.STOPPED, false), "CH-03", "CH-03"))
+                .isEqualTo(denied(DenialCode.SAME_TARGET));
+    }
+
+    @Test
     void divert_sourceStateUnknown_denied() {
         ChuteStatus unknown = chute("CH-03", "A", RunState.UNKNOWN, 20, 40, false);
         assertThat(divert(unknown, target())).isEqualTo(denied(DenialCode.STATE_UNKNOWN));
@@ -207,11 +246,15 @@ class SafetyPolicyTest {
 
     // reassign
 
-    private static RobotStatus robot(RunState state, int battery, int queued, int capacity) {
-        return new RobotStatus("AMR-01", state, battery, queued, capacity);
+    private static RobotStatus fromRobot(RunState state, int battery, int queued) {
+        return new RobotStatus("AMR-01", state, battery, queued, 4);
     }
 
-    private static final RobotStatus BUSY_ROBOT = robot(RunState.RUNNING, 80, 2, 4);
+    private static RobotStatus robot(RunState state, int battery, int queued, int capacity) {
+        return new RobotStatus("AMR-02", state, battery, queued, capacity);
+    }
+
+    private static final RobotStatus BUSY_ROBOT = fromRobot(RunState.RUNNING, 80, 2);
 
     @Test
     void reassign_batteryAtMinimum_allowed() {
@@ -220,19 +263,25 @@ class SafetyPolicyTest {
 
     @Test
     void reassign_sourceOfflineWithTasks_allowed() {
-        assertThat(policy.reassign(robot(RunState.OFFLINE, 10, 2, 4), robot(RunState.RUNNING, 80, 0, 4)))
+        assertThat(policy.reassign(fromRobot(RunState.OFFLINE, 10, 2), robot(RunState.RUNNING, 80, 0, 4)))
                 .isEqualTo(ALLOWED);
     }
 
     @Test
     void reassign_sourceHasNoTasks_denied() {
-        assertThat(policy.reassign(robot(RunState.RUNNING, 80, 0, 4), robot(RunState.RUNNING, 80, 0, 4)))
+        assertThat(policy.reassign(fromRobot(RunState.RUNNING, 80, 0), robot(RunState.RUNNING, 80, 0, 4)))
                 .isEqualTo(denied(DenialCode.NO_TASKS));
     }
 
     @Test
+    void reassign_sameRobot_deniedBeforeOtherChecks() {
+        RobotStatus idle = robot(RunState.UNKNOWN, 0, 0, 4);
+        assertThat(policy.reassign(idle, idle)).isEqualTo(denied(DenialCode.SAME_TARGET));
+    }
+
+    @Test
     void reassign_sourceStateUnknown_denied() {
-        assertThat(policy.reassign(robot(RunState.UNKNOWN, 80, 2, 4), robot(RunState.RUNNING, 80, 0, 4)))
+        assertThat(policy.reassign(fromRobot(RunState.UNKNOWN, 80, 2), robot(RunState.RUNNING, 80, 0, 4)))
                 .isEqualTo(denied(DenialCode.STATE_UNKNOWN));
     }
 
