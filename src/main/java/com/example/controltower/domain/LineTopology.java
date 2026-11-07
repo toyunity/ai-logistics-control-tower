@@ -18,6 +18,18 @@ public final class LineTopology {
         return id != null && (LINE.contains(id) || CHUTES.contains(id) || ROBOTS.contains(id));
     }
 
+    public boolean isConveyor(String id) {
+        return contains(id) && id.startsWith("CV-");
+    }
+
+    public boolean isChute(String id) {
+        return contains(id) && id.startsWith("CH-");
+    }
+
+    public boolean isRobot(String id) {
+        return contains(id) && id.startsWith("AMR-");
+    }
+
     public Optional<String> zoneOf(String id) {
         if (!contains(id)) {
             return Optional.empty();
