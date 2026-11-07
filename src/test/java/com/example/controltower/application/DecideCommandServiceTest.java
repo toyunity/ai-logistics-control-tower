@@ -76,9 +76,9 @@ class DecideCommandServiceTest {
     private final InMemorySorters sorters = new InMemorySorters(SORTER);
     private final InMemoryRobotFleet fleet = new InMemoryRobotFleet(SOURCE, TARGET);
     private final InMemorySafetySignals safety = new InMemorySafetySignals(CLOCK);
-    private final InMemoryPendingCommands pending = new InMemoryPendingCommands();
-    private final InMemoryMaintenanceDesk desk = new InMemoryMaintenanceDesk();
     private final InMemoryCommandAudit audit = new InMemoryCommandAudit();
+    private final InMemoryPendingCommands pending = new InMemoryPendingCommands(audit);
+    private final InMemoryMaintenanceDesk desk = new InMemoryMaintenanceDesk();
     private final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
     private final DecideCommandService service = service(CLOCK, unitOfWork, sorters);
 

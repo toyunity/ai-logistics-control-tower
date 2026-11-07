@@ -1,9 +1,9 @@
 package com.example.controltower.adapter.out.persistence;
 
 import com.example.controltower.domain.CommandSpec;
-import java.util.Map;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** 저장 형식이 앱의 매퍼 설정을 따라 바뀌지 않도록 전용 매퍼를 쓴다. */
 final class SpecJson {
@@ -13,12 +13,14 @@ final class SpecJson {
     private SpecJson() {}
 
     static String write(CommandSpec spec) {
-        return JSON.writeValueAsString(switch (spec) {
-            case CommandSpec.Restart s -> Map.of("kind", s.kind().name(), "conveyorId", s.conveyorId());
-            case CommandSpec.Divert s -> Map.of("kind", s.kind().name(), "fromChute", s.fromChute(), "toChute", s.toChute());
-            case CommandSpec.Reassign s -> Map.of("kind", s.kind().name(), "fromRobot", s.fromRobot(), "toRobot", s.toRobot());
-            case CommandSpec.Maintenance s -> Map.of("kind", s.kind().name(), "equipmentId", s.equipmentId(), "summary", s.summary());
-        });
+        ObjectNode json = JSON.createObjectNode().put("kind", spec.kind().name());
+        switch (spec) {
+            case CommandSpec.Restart s -> json.put("conveyorId", s.conveyorId());
+            case CommandSpec.Divert s -> json.put("fromChute", s.fromChute()).put("toChute", s.toChute());
+            case CommandSpec.Reassign s -> json.put("fromRobot", s.fromRobot()).put("toRobot", s.toRobot());
+            case CommandSpec.Maintenance s -> json.put("equipmentId", s.equipmentId()).put("summary", s.summary());
+        }
+        return JSON.writeValueAsString(json);
     }
 
     static CommandSpec read(String json) {
