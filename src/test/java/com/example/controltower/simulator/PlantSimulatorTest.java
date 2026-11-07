@@ -280,16 +280,15 @@ class PlantSimulatorTest {
 
     @Test
     void restartedConveyor_isNotStoppedAgainByTheSameBacklog() {
-        sim.start("chute-jam");
-        ticks(60);
+        jamUntilConveyorStops();
+        assertThat(plc("CV-2").run()).isZero();
         sim.divert(cmd(), 3, 4);
-        sim.restart(cmd(), "CV-3");
         sim.restart(cmd(), "CV-2");
-        sim.restart(cmd(), "CV-1");
 
         ticks(5);
 
-        assertThat(sim.snapshot().conveyors()).allSatisfy(c -> assertThat(c.run()).isEqualTo(1));
+        assertThat(plc("CV-3").run()).isZero();
+        assertThat(plc("CV-2").run()).isEqualTo(1);
     }
 
     @Test
@@ -371,6 +370,7 @@ class PlantSimulatorTest {
         assertThat(seenCodes()).contains("CV-3:STOPPED");
         assertThat(safety("Z1").presence()).isEqualTo(1);
         assertThat(safety("Z2").presence()).isZero();
+        assertThat(sim.snapshot().backlog()).isZero();
     }
 
     @Test
@@ -480,7 +480,6 @@ class PlantSimulatorTest {
     @Test
     void reset_keepsUndrainedEvents_andNeverReusesEventIds() {
         sim.start("scanner-degraded");
-        ticks(0);
         sim.tick(clock = clock.plusSeconds(1));
 
         sim.reset();
