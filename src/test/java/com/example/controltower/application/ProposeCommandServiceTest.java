@@ -38,7 +38,9 @@ import com.example.controltower.support.InMemoryUnitOfWork;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -277,6 +279,59 @@ class ProposeCommandServiceTest {
         safety.set(new SafetyStatus("Z1", false, false, NOW));
         safety.set(new SafetyStatus("Z2", true, false, NOW));
         assertThat(propose(RESTART).status()).isEqualTo(CommandStatus.PENDING);
+    }
+
+    @Test
+    void restartReadsSafetyLastThenTheClock() {
+        // 설비 조회가 느려도 안전 신호의 신선도 3초를 쓰지 않으려는 순서다.
+        List<String> order = new ArrayList<>();
+        InMemoryConveyors orderedConveyors =
+                new InMemoryConveyors(new ConveyorStatus("CV-3", "Z1", RunState.STOPPED, FaultClass.NONE)) {
+                    @Override
+                    public ConveyorStatus get(String id) {
+                        order.add("conveyor");
+                        return super.get(id);
+                    }
+                };
+        InMemorySorters orderedSorters = new InMemorySorters(sorter(RunState.RUNNING, 60, Map.of())) {
+            @Override
+            public SorterStatus get() {
+                order.add("sorter");
+                return super.get();
+            }
+        };
+        InMemorySafetySignals orderedSafety = new InMemorySafetySignals(CLOCK) {
+            @Override
+            public SafetyStatus read(String zone) {
+                order.add("safety");
+                return super.read(zone);
+            }
+        };
+        Clock orderedClock = new Clock() {
+            @Override
+            public Instant instant() {
+                order.add("clock");
+                return NOW;
+            }
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+        };
+        SafetyPolicy policy = new SafetyPolicy(new SafetyLimits(Duration.ofSeconds(3), 30));
+        ProposeCommandService ordered = new ProposeCommandService(
+                orderedConveyors, orderedSorters, fleet, orderedSafety, pending, desk, unitOfWork, policy,
+                LineTopology.DEFAULT, orderedClock, TTL);
+
+        assertThat(ordered.propose(RESTART, OPERATOR)).isInstanceOf(ProposalResult.Proposed.class);
+
+        assertThat(order).containsExactly("conveyor", "sorter", "safety", "clock");
     }
 
     @Test

@@ -42,6 +42,7 @@ import com.example.controltower.support.InMemoryUnitOfWork;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -240,6 +241,8 @@ class DecideCommandServiceTest {
 
         CommandResult result = service.confirm(card.id(), OPERATOR);
 
+        // 규칙이 먼저 막으므로 상태 비교까지 가지 않는다.
+        assertThat(result.message()).isEqualTo(DenialCode.NOT_STOPPED.message());
         assertTerminal(card, result, Outcome.CONFLICT, CommandStatus.FAILED);
         assertThat(sends()).isZero();
     }
@@ -294,7 +297,12 @@ class DecideCommandServiceTest {
         // 제안 뒤 시뮬레이터가 초기값(가동 중)으로 돌아갔다.
         PendingCommand restart = card(RESTART);
         conveyors.set(new ConveyorStatus("CV-3", "Z1", RunState.RUNNING, FaultClass.NONE));
-        assertTerminal(restart, service.confirm(restart.id(), OPERATOR), Outcome.CONFLICT, CommandStatus.FAILED);
+
+        CommandResult result = service.confirm(restart.id(), OPERATOR);
+
+        // 규칙이 먼저 막으므로 상태 비교까지 가지 않는다.
+        assertThat(result.message()).isEqualTo(DenialCode.NOT_STOPPED.message());
+        assertTerminal(restart, result, Outcome.CONFLICT, CommandStatus.FAILED);
         assertThat(sends()).isZero();
     }
 
@@ -600,10 +608,12 @@ class DecideCommandServiceTest {
         assertThat(audit.entries()).isEmpty();
     }
 
-    /** 트랜잭션마다 시작과 끝의 조회, 전송 횟수를 남긴다. 안에서 설비를 건드리면 둘이 달라진다. */
+    /** 트랜잭션마다 시작과 끝의 행 상태와 감사 수를 남기고, 안에서 설비를 건드리면 실패한다. */
     private final class CheckingUnitOfWork implements UnitOfWork {
         final List<CommandStatus> rowAtEntry = new ArrayList<>();
         final List<Integer> sendsAtEntry = new ArrayList<>();
+        final List<CommandStatus> rowAtExit = new ArrayList<>();
+        final List<Integer> auditAtExit = new ArrayList<>();
         private final PendingCommand card;
 
         CheckingUnitOfWork(PendingCommand card) {
@@ -617,6 +627,8 @@ class DecideCommandServiceTest {
             int reads = equipmentReads();
             int sends = sends();
             T result = work.get();
+            rowAtExit.add(rowStatus(card));
+            auditAtExit.add(audit.entries().size());
             assertThat(equipmentReads()).isEqualTo(reads);
             assertThat(sends()).isEqualTo(sends);
             return result;
@@ -633,6 +645,8 @@ class DecideCommandServiceTest {
 
         assertThat(checking.rowAtEntry).containsExactly(CommandStatus.PENDING, CommandStatus.EXECUTING);
         assertThat(checking.sendsAtEntry).containsExactly(0, 1);
+        assertThat(checking.rowAtExit).containsExactly(CommandStatus.EXECUTING, CommandStatus.SUCCEEDED);
+        assertThat(checking.auditAtExit).containsExactly(0, 1);
     }
 
     @Test
@@ -645,6 +659,8 @@ class DecideCommandServiceTest {
 
         assertThat(checking.rowAtEntry).containsExactly(CommandStatus.PENDING, CommandStatus.EXECUTING);
         assertThat(checking.sendsAtEntry).containsExactly(0, 0);
+        assertThat(checking.rowAtExit).containsExactly(CommandStatus.EXECUTING, CommandStatus.FAILED);
+        assertThat(checking.auditAtExit).containsExactly(0, 1);
     }
 
     @Test
@@ -666,7 +682,117 @@ class DecideCommandServiceTest {
         service(CLOCK, checking, sorters).reject(card.id(), OPERATOR);
 
         assertThat(checking.rowAtEntry).containsExactly(CommandStatus.PENDING);
-        assertThat(rowStatus(card)).isEqualTo(CommandStatus.REJECTED);
-        assertThat(audit.entries()).hasSize(1);
+        assertThat(checking.rowAtExit).containsExactly(CommandStatus.REJECTED);
+        assertThat(checking.auditAtExit).containsExactly(1);
+    }
+
+    /** 두 번째 트랜잭션(기록)에서 DB 오류를 낸다. */
+    private static UnitOfWork failingOnSecondCall() {
+        return new UnitOfWork() {
+            private int calls;
+
+            @Override
+            public <T> T inTransaction(Supplier<T> work) {
+                if (++calls == 2) {
+                    throw new IllegalStateException("db down");
+                }
+                return work.get();
+            }
+        };
+    }
+
+    @ParameterizedTest
+    @MethodSource("allKinds")
+    void recordFailsAfterSend_warnsOperator(CommandSpec spec) {
+        PendingCommand card = card(spec);
+
+        CommandResult result = service(CLOCK, failingOnSecondCall(), sorters).confirm(card.id(), OPERATOR);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.OK);
+        assertThat(result.status()).isEqualTo(CommandStatus.UNCONFIRMED);
+        assertThat(result.message()).contains("현장");
+        assertThat(sends()).isEqualTo(1);
+        assertThat(rowStatus(card)).isEqualTo(CommandStatus.EXECUTING);
+        assertThat(audit.entries()).isEmpty();
+    }
+
+    @Test
+    void recordFailsAfterFailedSend_warnsOperator() {
+        PendingCommand card = card(RESTART);
+        conveyors.afterSend(() -> {
+            throw new GatewayUnavailableException("refused", null);
+        });
+
+        CommandResult result = service(CLOCK, failingOnSecondCall(), sorters).confirm(card.id(), OPERATOR);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.OK);
+        assertThat(result.status()).isEqualTo(CommandStatus.UNCONFIRMED);
+        assertThat(result.message()).contains("현장");
+        assertThat(sends()).isEqualTo(1);
+    }
+
+    @Test
+    void recordFailsBeforeSend_keepsConflictResult() {
+        PendingCommand card = card(RESTART);
+        safety.set(new SafetyStatus("Z1", false, true, NOW));
+
+        CommandResult result = service(CLOCK, failingOnSecondCall(), sorters).confirm(card.id(), OPERATOR);
+
+        assertThat(result).isEqualTo(new CommandResult(
+                Outcome.CONFLICT, CommandStatus.FAILED, DenialCode.WORKER_IN_ZONE.message()));
+        assertThat(sends()).isZero();
+        assertThat(rowStatus(card)).isEqualTo(CommandStatus.EXECUTING);
+        assertThat(audit.entries()).isEmpty();
+    }
+
+    /** 트랜잭션 시작을 기다리는 사이 카드 유효 시간이 지나는 상황을 만든다. */
+    private DecideCommandService serviceExpiringWhileWaitingForTransaction() {
+        Instant[] current = {NOW};
+        Clock clock = new Clock() {
+            @Override
+            public Instant instant() {
+                return current[0];
+            }
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+        };
+        UnitOfWork waiting = new UnitOfWork() {
+            @Override
+            public <T> T inTransaction(Supplier<T> work) {
+                current[0] = NOW.plus(TTL);
+                return work.get();
+            }
+        };
+        return service(clock, waiting, sorters);
+    }
+
+    @Test
+    void claimUsesTheClockInsideTheTransaction() {
+        PendingCommand card = card(RESTART);
+
+        CommandResult result = serviceExpiringWhileWaitingForTransaction().confirm(card.id(), OPERATOR);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.CONFLICT);
+        assertThat(result.status()).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(sends()).isZero();
+    }
+
+    @Test
+    void rejectUsesTheClockInsideTheTransaction() {
+        PendingCommand card = card(RESTART);
+
+        CommandResult result = serviceExpiringWhileWaitingForTransaction().reject(card.id(), OPERATOR);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.CONFLICT);
+        assertThat(result.status()).isEqualTo(CommandStatus.EXPIRED);
+        assertThat(audit.entries()).isEmpty();
     }
 }
