@@ -184,6 +184,19 @@ class SimulatorWebTest {
     }
 
     @Test
+    void vendorB_unknownLane_is404_chainedReroute_is409() throws Exception {
+        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":9}")
+                .andExpect(status().isNotFound());
+        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":0,\"dst\":4}")
+                .andExpect(status().isNotFound());
+
+        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":4}")
+                .andExpect(status().isOk());
+        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":4,\"dst\":5}")
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void fleet_readsRobots_socAsFraction() throws Exception {
         sim.start("robot-battery");
 
