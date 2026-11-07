@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -98,6 +99,71 @@ class CascadeAnalyzerTest {
 
         assertThat(CascadeAnalyzer.analyze("CV-3", normal)).isEmpty();
         assertThat(CascadeAnalyzer.analyze("CV-3", List.of())).isEmpty();
+    }
+
+    private static void assertChuteJamWithExtra(EquipmentEvent... extra) {
+        var events = new ArrayList<>(List.of(CHUTE_FULL, LANE_BLOCKED, CV3_STOPPED));
+        events.addAll(List.of(extra));
+
+        assertThat(CascadeAnalyzer.analyze("CV-3", events)).hasValueSatisfying(c -> {
+            assertThat(c.equipmentId()).isEqualTo("CH-03");
+            assertThat(c.evidence()).containsExactly(CHUTE_FULL, LANE_BLOCKED, CV3_STOPPED);
+        });
+    }
+
+    @Test
+    void recoveredEventIsNotRoot_scanner() {
+        assertChuteJamWithExtra(
+                event("e4", "SC-1", "READ_DEGRADED", "09:45:00"), event("e5", "SC-1", "READ_NORMAL", "09:50:00"));
+    }
+
+    @Test
+    void recoveredEventIsNotRoot_targetItself() {
+        assertChuteJamWithExtra(
+                event("e4", "CV-3", "STOPPED", "09:40:00"), event("e5", "CV-3", "RESTARTED", "09:41:00"));
+    }
+
+    @Test
+    void recoveredEventIsNotRoot_otherChute() {
+        assertChuteJamWithExtra(
+                event("e4", "CH-05", "CHUTE_FULL", "09:50:00"), event("e5", "CH-05", "CHUTE_CLEARED", "09:52:00"));
+    }
+
+    @Test
+    void recoveryOnlyDropsEventsBeforeIt() {
+        assertChuteJamWithExtra(
+                event("e4", "CH-03", "CHUTE_FULL", "09:00:00"), event("e5", "CH-03", "CHUTE_CLEARED", "09:01:00"));
+    }
+
+    @Test
+    void chuteClearsAfterConveyorStopped_stillChute() {
+        assertChuteJamWithExtra(event("e4", "CH-03", "CHUTE_CLEARED", "10:00:10"));
+    }
+
+    @Test
+    void recoveryAtAnchorTimeCounts() {
+        var cleared = event("e4", "CH-03", "CHUTE_CLEARED", "10:00:09");
+
+        var candidate = CascadeAnalyzer.analyze("CV-3", List.of(CHUTE_FULL, LANE_BLOCKED, CV3_STOPPED, cleared));
+
+        assertThat(candidate.map(RootCauseCandidate::equipmentId)).contains("SR-1");
+    }
+
+    @Test
+    void eventAfterAnchorNotEvidence() {
+        assertChuteJamWithExtra(event("e4", "CH-02", "CHUTE_FULL", "10:00:10"));
+    }
+
+    @Test
+    void targetWithoutAbnormalEvent_anchorsOnLatestOnPath() {
+        var cleared = event("e4", "CH-03", "CHUTE_CLEARED", "10:00:02");
+
+        var candidate = CascadeAnalyzer.analyze("CV-1", List.of(CHUTE_FULL, cleared, CV3_STOPPED));
+
+        assertThat(candidate).hasValueSatisfying(c -> {
+            assertThat(c.equipmentId()).isEqualTo("CV-3");
+            assertThat(c.evidence()).containsExactly(CV3_STOPPED);
+        });
     }
 
     @Test
