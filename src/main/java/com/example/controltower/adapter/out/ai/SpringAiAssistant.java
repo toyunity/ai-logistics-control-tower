@@ -49,7 +49,9 @@ public class SpringAiAssistant implements ControlAssistant {
                     .map(d -> new Source(d.getId(), (String) d.getMetadata().get("question"), d.getScore()))
                     .toList()));
         }
+        // 버리지 않고 빈 Text로 넘긴다. 서비스의 유휴 타이머는 업스트림 청크마다 초기화되어야 한다.
         if (r.chatResponse() == null || r.chatResponse().getResult() == null) {
+            chunks.add(new AssistantChunk.Text(""));
             return chunks;
         }
         var result = r.chatResponse().getResult();
@@ -57,9 +59,7 @@ public class SpringAiAssistant implements ControlAssistant {
             return List.of(new AssistantChunk.Refused()); // 거절 응답의 근거와 본문은 내보내지 않는다
         }
         String text = result.getOutput().getText();
-        if (text != null && !text.isEmpty()) { // hasText로 거르면 공백 청크가 빠져 띄어쓰기가 사라진다
-            chunks.add(new AssistantChunk.Text(text));
-        }
+        chunks.add(new AssistantChunk.Text(text == null ? "" : text));
         return chunks;
     }
 }

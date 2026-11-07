@@ -35,6 +35,9 @@ public class AssistantChatService implements AssistantChat {
         return Flux.defer(() -> {
             Flux<ChatEvent> body = assistant.stream(conversationId, message, new TurnScope(actor, MAX_TOOL_CALLS))
                     .timeout(idleTimeout) // 청크 단위라 침묵만 제한하고 답변 길이는 제한하지 않는다
+                    // 빈 청크도 타이머를 초기화해야 하므로 timeout 뒤에서 거른다.
+                    // hasText로 거르면 공백 청크가 빠져 띄어쓰기가 사라진다.
+                    .filter(c -> !(c instanceof AssistantChunk.Text t && t.text().isEmpty()))
                     .map(AssistantChatService::toEvent);
             return Flux.<ChatEvent>just(new Meta(conversationId))
                     .concatWith(body)

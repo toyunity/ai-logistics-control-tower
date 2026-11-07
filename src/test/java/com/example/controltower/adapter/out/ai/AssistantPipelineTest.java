@@ -233,6 +233,24 @@ class AssistantPipelineTest {
     }
 
     @Test
+    void emptyChunksKeepIdleTimerRunning() {
+        // 간격은 타임아웃보다 짧고 합계는 타임아웃의 2배다. 빈 청크가 타이머를 초기화하지 않으면 끊긴다.
+        ChatResponse[] empties = {noGeneration(), nullText(), text("")};
+        model.enqueueStream(Flux.range(0, 20)
+                .delayElements(Duration.ofMillis(50))
+                .map(i -> empties[i % empties.length])
+                .concatWith(Flux.just(text("끝"), finish("end_turn"))));
+
+        List<ChatEvent> events = service(faqStore(), Duration.ofMillis(500))
+                .stream(id, "환불 되나요", Actor.ANONYMOUS)
+                .collectList()
+                .block(Duration.ofSeconds(5));
+
+        assertThat(events).last().isEqualTo(new Done());
+        assertThat(events).filteredOn(Delta.class::isInstance).containsExactly(new Delta("끝"));
+    }
+
+    @Test
     void retrievalFailureEmitsFailed() {
         VectorStore broken = new VectorStore() {
             @Override
@@ -265,6 +283,7 @@ class AssistantPipelineTest {
 
         List<ChatEvent> events = run("환불 되나요");
 
+        assertThat(events).hasSize(2);
         assertThat(events).doesNotContain(new Done());
         assertThat(((Failed) events.get(events.size() - 1)).code()).isEqualTo("REFUSED");
     }
