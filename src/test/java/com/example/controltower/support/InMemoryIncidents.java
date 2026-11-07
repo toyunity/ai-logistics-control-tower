@@ -13,6 +13,12 @@ import java.util.UUID;
 public class InMemoryIncidents implements Incidents {
 
     private final Map<UUID, Incident> incidents = new LinkedHashMap<>();
+    private int opens;
+
+    /** 거부된 시도까지 센다. 감지는 설비군 단위로 예외를 삼키므로 결과 건수만으로는 중복 시도가 보이지 않는다. */
+    public int opens() {
+        return opens;
+    }
 
     public List<Incident> all() {
         return List.copyOf(incidents.values());
@@ -25,6 +31,7 @@ public class InMemoryIncidents implements Incidents {
 
     @Override
     public void open(Incident incident) {
+        opens++;
         boolean duplicate = open().stream()
                 .anyMatch(i -> i.equipmentId().equals(incident.equipmentId()) && i.kind().equals(incident.kind()));
         if (duplicate) {

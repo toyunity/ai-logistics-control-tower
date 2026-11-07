@@ -124,7 +124,7 @@ class DetectAnomaliesServiceTest {
         service.detect();
 
         Incident incident = onlyOpen();
-        assertThat(incidents.all()).hasSize(1);
+        assertThat(incidents.opens()).isEqualTo(1);
         assertThat(incident.equipmentId()).isEqualTo("CV-3");
         assertThat(incident.kind()).isEqualTo("CONVEYOR_STOPPED");
         assertThat(incident.openedAt()).isEqualTo(NOW);
@@ -252,6 +252,33 @@ class DetectAnomaliesServiceTest {
         assertThat(onlyOpen().equipmentId()).isEqualTo("AMR-FLEET");
         assertThat(onlyOpen().kind()).isEqualTo("ROBOT_BATTERY");
         assertThat(onlyOpen().severity()).isEqualTo(Severity.SEV3);
+    }
+
+    @Test
+    void robotBattery_robotMissingFromRead_couldStillBeLowSoStaysOpen() {
+        fleet.set(robot("AMR-01", 10));
+        fleet.set(robot("AMR-02", 10));
+        service.detect();
+
+        fleet.set(robot("AMR-01", 80));
+        service.detect();
+
+        assertThat(onlyOpen().kind()).isEqualTo("ROBOT_BATTERY");
+    }
+
+    @Test
+    void robotBattery_oneUnknownRobotCannotReachThreshold_closes() {
+        fleet.set(robot("AMR-01", 10));
+        fleet.set(robot("AMR-02", 10));
+        fleet.set(robot("AMR-04", 80));
+        service.detect();
+
+        fleet.set(robot("AMR-01", 80));
+        fleet.set(robot("AMR-02", 80));
+        fleet.set(new RobotStatus("AMR-04", RunState.OFFLINE, 80, 0, 5));
+        service.detect();
+
+        assertThat(incidents.open()).isEmpty();
     }
 
     @Test
