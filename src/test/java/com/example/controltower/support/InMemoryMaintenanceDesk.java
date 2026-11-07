@@ -47,6 +47,9 @@ public class InMemoryMaintenanceDesk implements MaintenanceDesk {
     @Override
     public UUID open(String equipmentId, String summary, Instant now) {
         opens++;
+        if (requests.values().stream().anyMatch(r -> r.equipmentId().equals(equipmentId) && r.closedAt() == null)) {
+            throw new GatewayUnavailableException("maintenance request already open", null);
+        }
         MaintenanceRequest request = new MaintenanceRequest(UUID.randomUUID(), equipmentId, summary, now, null);
         requests.put(request.id(), request);
         afterSend.run();

@@ -6,6 +6,9 @@ spring:
     username: ${DB_USER:consult}
     password: ${DB_PASSWORD:consult}
     hikari.data-source-properties.logServerErrorDetail: false   # true면 pgjdbc 예외 메시지에 사용자 입력이 그대로 들어간다
+  sql.init:
+    mode: always                    # 기본값 embedded면 PostgreSQL에서 관제 스키마가 만들어지지 않는다
+    schema-locations: classpath:schema-control.sql
   ai:
     model:
       chat: anthropic
