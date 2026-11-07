@@ -20,7 +20,8 @@ public enum DenialCode {
     ROBOT_OFFLINE("대상 로봇을 사용할 수 없습니다."),
     LOW_BATTERY("대상 로봇의 배터리가 부족합니다."),
     QUEUE_FULL("대상 로봇의 작업 큐가 가득 찼습니다."),
-    MAINTENANCE_ALREADY_OPEN("이 설비에 열린 정비 요청이 이미 있습니다.");
+    MAINTENANCE_ALREADY_OPEN("이 설비에 열린 정비 요청이 이미 있습니다."),
+    SAME_TARGET("원본과 대상이 같습니다.");
 
     private final String message;
 

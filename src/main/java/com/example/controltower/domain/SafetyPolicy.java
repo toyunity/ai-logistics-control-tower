@@ -20,7 +20,11 @@ public final class SafetyPolicy {
             return deny(DenialCode.SAFETY_SIGNAL_UNKNOWN);
         }
         SafetyStatus signal = safety.get();
-        if (Duration.between(signal.measuredAt(), now).compareTo(limits.signalMaxAge()) > 0) {
+        if (!signal.zone().equals(c.zone())) {
+            return deny(DenialCode.SAFETY_SIGNAL_UNKNOWN);
+        }
+        // 미래 시각은 시계가 어긋났다는 뜻이므로 같은 기준으로 막는다.
+        if (Duration.between(signal.measuredAt(), now).abs().compareTo(limits.signalMaxAge()) > 0) {
             return deny(DenialCode.SAFETY_SIGNAL_STALE);
         }
         if (signal.emergencyStop()) {
@@ -42,11 +46,17 @@ public final class SafetyPolicy {
         if (s.blocked()) {
             return deny(DenialCode.SORTER_BLOCKED);
         }
+        if (s.state() != RunState.RUNNING) {
+            return deny(DenialCode.SORTER_NOT_RUNNING);
+        }
         return ALLOWED;
     }
 
     // 분류기 차단과 원본 만재는 우회의 이유이므로 검사하지 않는다.
     public Decision divert(SorterStatus s, String from, String to) {
+        if (from.equals(to)) {
+            return deny(DenialCode.SAME_TARGET);
+        }
         if (s.state() != RunState.RUNNING) {
             return deny(DenialCode.SORTER_NOT_RUNNING);
         }
@@ -77,6 +87,9 @@ public final class SafetyPolicy {
 
     // 원본 OFFLINE은 막지 않는다. 멈춘 로봇의 작업도 옮길 수 있어야 한다.
     public Decision reassign(RobotStatus from, RobotStatus to) {
+        if (from.id().equals(to.id())) {
+            return deny(DenialCode.SAME_TARGET);
+        }
         if (from.state() == RunState.UNKNOWN) {
             return deny(DenialCode.STATE_UNKNOWN);
         }
