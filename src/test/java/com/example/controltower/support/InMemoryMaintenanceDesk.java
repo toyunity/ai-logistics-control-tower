@@ -13,11 +13,17 @@ public class InMemoryMaintenanceDesk implements MaintenanceDesk {
 
     private final Map<UUID, MaintenanceRequest> requests = new LinkedHashMap<>();
     private boolean failing;
+    private Runnable afterSend = () -> {};
     private int reads;
     private int opens;
 
     public void setFailing(boolean failing) {
         this.failing = failing;
+    }
+
+    /** 전송이 기록되고 적용된 뒤에 실행한다. 던지면 응답을 잃은 전송, 상태를 되돌리면 아직 반영되지 않은 전송을 흉내 낸다. */
+    public void afterSend(Runnable afterSend) {
+        this.afterSend = afterSend;
     }
 
     public int reads() {
@@ -43,6 +49,7 @@ public class InMemoryMaintenanceDesk implements MaintenanceDesk {
         opens++;
         MaintenanceRequest request = new MaintenanceRequest(UUID.randomUUID(), equipmentId, summary, now, null);
         requests.put(request.id(), request);
+        afterSend.run();
         return request.id();
     }
 

@@ -16,6 +16,7 @@ public class InMemoryConveyors implements Conveyors {
     private final Map<String, ConveyorStatus> conveyors = new LinkedHashMap<>();
     private final List<UUID> commandIds = new ArrayList<>();
     private boolean failing;
+    private Runnable afterSend = () -> {};
     private int reads;
 
     public InMemoryConveyors(ConveyorStatus... initial) {
@@ -30,6 +31,11 @@ public class InMemoryConveyors implements Conveyors {
 
     public void setFailing(boolean failing) {
         this.failing = failing;
+    }
+
+    /** 전송이 기록되고 적용된 뒤에 실행한다. 던지면 응답을 잃은 전송, 상태를 되돌리면 아직 반영되지 않은 전송을 흉내 낸다. */
+    public void afterSend(Runnable afterSend) {
+        this.afterSend = afterSend;
     }
 
     public int reads() {
@@ -64,6 +70,7 @@ public class InMemoryConveyors implements Conveyors {
         commandIds.add(commandId);
         ConveyorStatus c = conveyors.get(id);
         set(new ConveyorStatus(c.id(), c.zone(), RunState.RUNNING, FaultClass.NONE));
+        afterSend.run();
     }
 
     private void failIfDown() {
