@@ -92,10 +92,10 @@ public final class DecideCommandService implements DecideCommand {
         if (!mayDecide(card, actor)) {
             return forbidden();
         }
-        Instant now = clock.instant();
+        // 트랜잭션을 기다리는 동안 만료될 수 있으므로 시각은 안에서 읽는다.
         boolean claimed = unitOfWork.inTransaction(
-                () -> pending.transition(id, CommandStatus.PENDING, CommandStatus.EXECUTING, now));
-        return claimed ? execute(card) : conflict(card, now);
+                () -> pending.transition(id, CommandStatus.PENDING, CommandStatus.EXECUTING, clock.instant()));
+        return claimed ? execute(card) : conflict(card);
     }
 
     @Override
@@ -108,15 +108,15 @@ public final class DecideCommandService implements DecideCommand {
         if (!mayDecide(card, actor)) {
             return forbidden();
         }
-        Instant now = clock.instant();
         boolean rejected = unitOfWork.inTransaction(() -> {
+            Instant now = clock.instant();
             boolean moved = pending.transition(id, CommandStatus.PENDING, CommandStatus.REJECTED, now);
             if (moved) {
                 audit.record(id, card.accountId(), card.spec(), CommandStatus.REJECTED, now);
             }
             return moved;
         });
-        return rejected ? new CommandResult(Outcome.OK, CommandStatus.REJECTED, REJECTED) : conflict(card, now);
+        return rejected ? new CommandResult(Outcome.OK, CommandStatus.REJECTED, REJECTED) : conflict(card);
     }
 
     // 제안 뒤 강등된 계정을 막으려고 카드 주인이어도 역할을 다시 본다.
@@ -128,7 +128,8 @@ public final class DecideCommandService implements DecideCommand {
         return new CommandResult(Outcome.FORBIDDEN, null, DenialCode.NOT_PERMITTED.message());
     }
 
-    private CommandResult conflict(PendingCommand card, Instant now) {
+    private CommandResult conflict(PendingCommand card) {
+        Instant now = clock.instant();
         PendingCommand current = pending.find(card.id()).orElse(card);
         // 조건부 갱신은 만료된 행을 바꾸지 않으므로 DB에는 PENDING으로 남아 있다.
         if (current.status() == CommandStatus.PENDING && !current.expiresAt().isAfter(now)) {
@@ -143,14 +144,14 @@ public final class DecideCommandService implements DecideCommand {
             evaluation = evaluator.evaluate(card.spec());
         } catch (RuntimeException e) {
             log.log(Level.ERROR, "unexpected failure during recheck: " + card.id(), e);
-            return finish(card, CommandStatus.FAILED, Outcome.CONFLICT, RECHECK_FAILED);
+            return refuse(card, RECHECK_FAILED);
         }
         if (evaluation.decision() instanceof Decision.Denied(DenialCode code)) {
-            return finish(card, CommandStatus.FAILED, Outcome.CONFLICT, code.message());
+            return refuse(card, code.message());
         }
         // 규칙이 허용한 뒤에만 비교한다. 거절 사유가 "상태 변경"보다 구체적이다.
         if (!evaluation.digest().equals(card.stateDigest())) {
-            return finish(card, CommandStatus.FAILED, Outcome.CONFLICT, STATE_CHANGED);
+            return refuse(card, STATE_CHANGED);
         }
         return sendAndVerify(card, evaluation);
     }
@@ -161,7 +162,7 @@ public final class DecideCommandService implements DecideCommand {
         } catch (CommandOutcomeUnknownException e) {
             return unconfirmed(card);
         } catch (GatewayUnavailableException e) {
-            return finish(card, CommandStatus.FAILED, Outcome.CONFLICT, SEND_FAILED);
+            return afterSend(card, CommandStatus.FAILED, Outcome.CONFLICT, SEND_FAILED);
         } catch (RuntimeException e) {
             log.log(Level.ERROR, "unexpected failure during send: " + card.id(), e);
             return unconfirmed(card);
@@ -176,7 +177,7 @@ public final class DecideCommandService implements DecideCommand {
             return unconfirmed(card);
         }
         // 미반영을 FAILED로 적지 않는다. 늦게 반영될 수 있는데 실패로 보이면 다시 보내게 된다.
-        return applied ? finish(card, CommandStatus.SUCCEEDED, Outcome.OK, DONE) : unconfirmed(card);
+        return applied ? afterSend(card, CommandStatus.SUCCEEDED, Outcome.OK, DONE) : unconfirmed(card);
     }
 
     private void send(PendingCommand card) {
@@ -202,18 +203,35 @@ public final class DecideCommandService implements DecideCommand {
     }
 
     private CommandResult unconfirmed(PendingCommand card) {
-        return finish(card, CommandStatus.UNCONFIRMED, Outcome.OK, CHECK_ON_SITE);
+        return afterSend(card, CommandStatus.UNCONFIRMED, Outcome.OK, CHECK_ON_SITE);
     }
 
-    // 여기서 DB가 실패하면 예외가 올라가고 행은 EXECUTING으로 남는다. 기동 시 정리가 UNCONFIRMED로 닫는다.
-    private CommandResult finish(PendingCommand card, CommandStatus status, Outcome outcome, String message) {
-        Instant now = clock.instant();
-        unitOfWork.inTransaction(() -> {
-            // 다른 인스턴스의 기동 정리가 먼저 UNCONFIRMED로 닫았어도 실제 결과는 감사에 남긴다.
-            pending.transition(card.id(), CommandStatus.EXECUTING, status, now);
-            audit.record(card.id(), card.accountId(), card.spec(), status, now);
-            return null;
-        });
-        return new CommandResult(outcome, status, message);
+    private CommandResult refuse(PendingCommand card, String message) {
+        record(card, CommandStatus.FAILED);
+        return new CommandResult(Outcome.CONFLICT, CommandStatus.FAILED, message);
+    }
+
+    // 기록을 못 하면 설비가 움직였을 수 있는데 결과가 남지 않으므로 어떤 결과든 현장 확인으로 안내한다.
+    private CommandResult afterSend(PendingCommand card, CommandStatus status, Outcome outcome, String message) {
+        return record(card, status)
+                ? new CommandResult(outcome, status, message)
+                : new CommandResult(Outcome.OK, CommandStatus.UNCONFIRMED, CHECK_ON_SITE);
+    }
+
+    // 실패하면 행은 EXECUTING으로 남고 기동 시 정리가 UNCONFIRMED로 닫는다. 예외 내용에 SQL 값이 섞일 수 있어 로그에 넣지 않는다.
+    private boolean record(PendingCommand card, CommandStatus status) {
+        try {
+            unitOfWork.inTransaction(() -> {
+                Instant now = clock.instant();
+                // 다른 인스턴스의 기동 정리가 먼저 UNCONFIRMED로 닫았어도 실제 결과는 감사에 남긴다.
+                pending.transition(card.id(), CommandStatus.EXECUTING, status, now);
+                audit.record(card.id(), card.accountId(), card.spec(), status, now);
+                return null;
+            });
+            return true;
+        } catch (RuntimeException e) {
+            log.log(Level.ERROR, "failed to record command result: " + card.id() + " " + status);
+            return false;
+        }
     }
 }

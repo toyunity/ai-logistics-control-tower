@@ -69,13 +69,18 @@ final class CommandEvaluator {
     }
 
     private Evaluation restart(CommandSpec.Restart spec) {
-        Optional<SafetyStatus> signal = readSafety(topology.zoneOf(spec.conveyorId()).orElseThrow());
-        ConveyorStatus conveyor;
-        SorterStatus sorter;
+        String zone = topology.zoneOf(spec.conveyorId()).orElseThrow();
+        ConveyorStatus conveyor = null;
+        SorterStatus sorter = null;
         try {
             conveyor = conveyors.get(spec.conveyorId());
             sorter = sorters.get();
         } catch (GatewayUnavailableException e) {
+            // 거절 사유를 정하려면 안전 신호도 읽어야 하므로 아래에서 판단한다.
+        }
+        // 설비 조회가 느려도 신호의 신선도를 쓰지 않도록 안전 신호를 마지막에 읽는다.
+        Optional<SafetyStatus> signal = readSafety(zone);
+        if (conveyor == null || sorter == null) {
             // 둘 다 실패하면 규칙과 같이 안전 사유를 먼저 보인다.
             return denied(signal.isEmpty() ? DenialCode.SAFETY_SIGNAL_UNKNOWN : DenialCode.STATE_UNKNOWN);
         }
