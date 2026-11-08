@@ -62,7 +62,8 @@ class DemoEmbeddingModelTest {
             "지구에서 달까지 얼마나 걸리나요?",
             "그 기간이 지나면 어떻게 되나요?");
 
-    // 키워드 유사도의 한계로 남은 오답. 고치면 README도 함께 고친다.
+    // 어떤 임계값도 못 거르는 오답. 임진왜란은 바이그램 해시 충돌, 다이어트는 '컨베이어'와 겹치는 '이어'다.
+    // 둘 다 가장 낮은 정답(알람 101, 0.223)보다 높다. 고치면 README도 함께 고친다.
     private static final List<String> KNOWN_LEAKS = List.of(
             "임진왜란은 몇 년에 일어났나요?",
             "다이어트는 어떻게 하나요?");
@@ -80,6 +81,13 @@ class DemoEmbeddingModelTest {
         var yaml = new YamlPropertiesFactoryBean();
         yaml.setResources(new ClassPathResource("application-demo.yaml"));
         threshold = Double.parseDouble(yaml.getObject().getProperty("controltower.similarity-threshold"));
+    }
+
+    // 설계가 정한 측정 규모다. 질문을 빼서 통과시키지 않게 크기를 고정해 둔다.
+    @Test
+    void measuredOnEnoughQuestions() {
+        assertThat(PARAPHRASES).hasSizeGreaterThanOrEqualTo(9);
+        assertThat(UNRELATED).hasSizeGreaterThanOrEqualTo(20);
     }
 
     @Test
