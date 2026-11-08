@@ -101,20 +101,20 @@ class ChatStreamIT {
     }
 
     @Test
-    void seededFaqIsCitedInSources() throws Exception {
-        chatModel.enqueueStream(Flux.just(text("7일 이내에 신청하세요.")));
+    void seededDocumentIsCitedInSources() throws Exception {
+        chatModel.enqueueStream(Flux.just(text("정비 요청을 등록하세요.")));
 
-        List<SseEvent> events = chat("환불하고 싶어요");
+        List<SseEvent> events = chat("알람 205가 떴어요");
 
         assertThat(names(events)).containsExactly("meta", "sources", "delta", "done");
-        assertThat(events.get(1).data()).contains("\"id\":\"refund-policy\"");
+        assertThat(events.get(1).data()).contains("\"id\":\"cv-alarm-205\"", "\"title\":\"컨베이어 알람 205 기계 고장\"");
 
-        String q = URLEncoder.encode("환불", StandardCharsets.UTF_8);
+        String q = URLEncoder.encode("알람 205", StandardCharsets.UTF_8);
         HttpResponse<String> search = http.send(
-                HttpRequest.newBuilder(uri("/api/faqs/search?q=" + q)).build(),
+                HttpRequest.newBuilder(uri("/api/knowledge/search?q=" + q)).build(),
                 BodyHandlers.ofString());
         assertThat(search.statusCode()).isEqualTo(200);
-        assertThat(search.body()).contains("\"id\":\"refund-policy\"");
+        assertThat(search.body()).contains("\"id\":\"cv-alarm-205\"");
     }
 
     @Test

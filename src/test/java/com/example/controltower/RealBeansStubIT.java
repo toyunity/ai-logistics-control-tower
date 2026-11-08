@@ -191,9 +191,9 @@ class RealBeansStubIT {
     @LocalServerPort int port;
 
     @Test
-    void faqEmbeddingsCarryOnlyQuestionAndAnswer() {
+    void documentEmbeddingsCarryOnlyTitleAndBody() {
         JsonNode input = JSON.readTree(EMBEDDINGS.getFirst().body()).get("input");
-        assertThat(input.get(0).asString()).contains("Q: 환불은 어떻게 하나요?\nA: 상품 수령 후 7일 이내");
+        assertThat(input.get(0).asString()).startsWith("제목: 가상 라인 구성 개요\n내용: 이 라인은 시뮬레이터 전용 가상 현장이다.");
         assertThat(input.toString()).doesNotContain("hash:", "category:");
     }
 
@@ -260,7 +260,7 @@ class RealBeansStubIT {
     void chatStreamSendsTheConfiguredRequestAndMapsTheReply() throws Exception {
         MESSAGES.clear();
         String sse = post(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
-                "http://localhost:" + port + "/api/chat/stream", "{\"message\":\"환불은 며칠 안에 가능한가요?\"}");
+                "http://localhost:" + port + "/api/chat/stream", "{\"message\":\"알람 205가 뜨면 어떻게 하나요?\"}");
 
         assertThat(sse.lines().filter(l -> l.startsWith("event:")).toList()).containsExactly(
                 "event:meta", "event:sources", "event:delta", "event:delta", "event:delta", "event:done");

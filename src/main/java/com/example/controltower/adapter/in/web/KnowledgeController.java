@@ -10,11 +10,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-public class FaqController {
+public class KnowledgeController {
 
     private final KnowledgeSearch knowledgeSearch;
 
-    public FaqController(KnowledgeSearch knowledgeSearch) {
+    public KnowledgeController(KnowledgeSearch knowledgeSearch) {
         this.knowledgeSearch = knowledgeSearch;
     }
 

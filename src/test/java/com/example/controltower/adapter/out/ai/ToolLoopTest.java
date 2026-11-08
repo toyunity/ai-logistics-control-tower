@@ -92,13 +92,13 @@ class ToolLoopTest {
     void userMessageSavedOnce_fullVisibleAnswer() {
         enqueueToolLoop();
 
-        assertThat(run("환불 되나요")).last().isEqualTo(new Done());
+        assertThat(run("알람 205 뭐예요")).last().isEqualTo(new Done());
 
         assertThat(ping.calls).hasValue(1);
         List<Message> saved = memory.get(id.toString());
         assertThat(saved).extracting(Message::getMessageType)
                 .containsExactly(MessageType.USER, MessageType.ASSISTANT);
-        assertThat(saved.get(0).getText()).isEqualTo("환불 되나요");
+        assertThat(saved.get(0).getText()).isEqualTo("알람 205 뭐예요");
         // 메모리는 도구 앞뒤 스트림을 합쳐 저장하므로 도구 앞 문장도 답변에 포함된다.
         assertThat(saved.get(1).getText()).isEqualTo("확인합니다 끝");
         assertThat(((AssistantMessage) saved.get(1)).hasToolCalls()).isFalse();
@@ -115,7 +115,7 @@ class ToolLoopTest {
         enqueueToolLoop();
         int embeddedBefore = embedding.embeddedTextCount();
 
-        List<ChatEvent> events = run("환불 되나요");
+        List<ChatEvent> events = run("알람 205 뭐예요");
 
         assertThat(ping.calls).hasValue(1);
         // Sources는 어댑터가 한 번만 내보내므로 검색 횟수는 임베딩 호출로 센다.
@@ -128,7 +128,7 @@ class ToolLoopTest {
         enqueueToolLoop();
         var scope = new TurnScope(Actor.ANONYMOUS, 8);
 
-        new SpringAiAssistant(client).stream(id, "환불 되나요", scope).blockLast();
+        new SpringAiAssistant(client).stream(id, "알람 205 뭐예요", scope).blockLast();
 
         assertThat(ping.calls).hasValue(1);
         assertThat(ping.scope).hasValue(scope);
@@ -139,7 +139,7 @@ class ToolLoopTest {
     void textBeforeAndAfterToolStayInOrder() {
         enqueueToolLoop();
 
-        List<ChatEvent> events = run("환불 되나요");
+        List<ChatEvent> events = run("알람 205 뭐예요");
 
         assertThat(events).filteredOn(Delta.class::isInstance)
                 .containsExactly(new Delta("확인합니다 "), new Delta("끝"));
@@ -148,10 +148,10 @@ class ToolLoopTest {
     @Test
     void followUpRewriteRunsOnce() {
         model.enqueueStream(Flux.just(text("네"), finish("end_turn")));
-        run("환불 되나요");
+        run("알람 205 뭐예요");
 
         enqueueToolLoop();
-        model.enqueueCall("환불 처리 기간");
+        model.enqueueCall("알람 205 조치");
         List<ChatEvent> second = run("그건 얼마나 걸려요");
 
         assertThat(second).last().isEqualTo(new Done());

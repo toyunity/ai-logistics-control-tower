@@ -62,7 +62,7 @@ class ChatControllerTest {
 
         assertThat(result.andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .contains("event:meta\ndata:{\"conversationId\":\"" + ID + "\"}")
-                .contains("event:sources\ndata:{\"items\":[{\"id\":\"a\",\"question\":\"q\",\"score\":0.9}]}")
+                .contains("event:sources\ndata:{\"items\":[{\"id\":\"a\",\"title\":\"q\",\"score\":0.9}]}")
                 .contains("event:delta\ndata:{\"text\":\" \"}")
                 .contains("event:done\ndata:{}")
                 .contains("event:error\ndata:{\"code\":\"UPSTREAM\",\"message\":\"m\"}");
