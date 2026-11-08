@@ -1,6 +1,7 @@
 package com.example.controltower.config;
 
 import com.example.controltower.adapter.in.tool.PlantTools;
+import com.example.controltower.adapter.in.tool.ToolResults;
 import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.DecideCommand;
 import com.example.controltower.application.port.in.DetectAnomalies;
@@ -38,7 +39,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.tool.execution.ToolExecutionExceptionProcessor;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
+import org.springframework.ai.util.json.JsonParser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -64,6 +67,13 @@ public class ServiceConfig {
     @Bean
     ToolCallbackProvider plantTools(PlantStatus status, ProposeCommand propose) {
         return MethodToolCallbackProvider.builder().toolObjects(new PlantTools(status, propose)).build();
+    }
+
+    // 도구 메서드에 닿기 전의 인자 변환 실패다. 기본 처리기는 모델이 보낸 값이 든 예외 문구를 그대로 돌려준다.
+    @Bean
+    ToolExecutionExceptionProcessor toolExecutionExceptionProcessor() {
+        String fixed = JsonParser.toJson(ToolResults.INVALID_ARGUMENT);
+        return e -> fixed;
     }
 
     @Bean
