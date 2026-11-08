@@ -148,9 +148,23 @@ class ControlApiIT {
         assertThat(conveyors.get("CV-3").state()).isEqualTo(RunState.STOPPED);
     }
 
-    // 우회 카드의 상태 요약에는 차단·만재 여부가 없어 리셋 뒤에도 유효하다. 리셋으로 이산 상태가 바뀌는 재가동 카드로 본다.
     @Test
     void staleCardAfterSimReset_409() throws Exception {
+        loginOperator();
+        startChuteJamUntilBlocked();
+        PendingCommand card = proposedDivert();
+        assertThat(post("/sim/reset", "").statusCode()).isEqualTo(200);
+
+        HttpResponse<String> response = confirm(card.id());
+
+        assertThat(response.statusCode()).isEqualTo(409);
+        assertThat(json(response).get("status").asString()).isEqualTo("FAILED");
+        assertThat(sim.snapshot().reroutes()).isEmpty();
+    }
+
+    // 조치 순서대로 우회를 확정한 뒤 만든 재가동 카드도 리셋 뒤에는 보내지 않는다.
+    @Test
+    void staleRestartCardAfterSimReset_409() throws Exception {
         loginOperator();
         startChuteJamUntilBlocked();
         await().atMost(Duration.ofSeconds(30)).until(() -> conveyors.get("CV-3").state() == RunState.STOPPED);

@@ -134,7 +134,8 @@ class PlantControllerTest {
                     incidents,
                     new InMemoryMaintenanceDesk(),
                     LineTopology.DEFAULT,
-                    Clock.systemUTC());
+                    Clock.systemUTC(),
+                    Executors.newVirtualThreadPerTaskExecutor());
         }
     }
 

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.controltower.application.port.in.DetectAnomalies;
 import com.example.controltower.application.port.in.IngestEvent;
 import com.example.controltower.application.service.IngestEventService;
 import com.example.controltower.domain.LineTopology;
@@ -15,8 +16,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -44,8 +50,38 @@ class EventControllerTest {
         }
 
         @Bean
-        IngestEvent ingestEvent(InMemoryEventLog log) {
-            return new IngestEventService(log, LineTopology.DEFAULT, () -> {});
+        SlowDetection slowDetection() {
+            return new SlowDetection();
+        }
+
+        @Bean(destroyMethod = "shutdownNow")
+        ExecutorService detectionExecutor() {
+            return Executors.newSingleThreadExecutor();
+        }
+
+        @Bean
+        IngestEvent ingestEvent(InMemoryEventLog log, SlowDetection detection, ExecutorService detectionExecutor) {
+            return new IngestEventService(log, LineTopology.DEFAULT, detection, detectionExecutor);
+        }
+    }
+
+    /** 게이트웨이가 응답하지 않는 감지 주기를 흉내 낸다. hold가 있으면 풀릴 때까지 붙잡는다. */
+    static class SlowDetection implements DetectAnomalies {
+        final CountDownLatch entered = new CountDownLatch(1);
+        volatile CountDownLatch hold;
+
+        @Override
+        public void detect() {
+            CountDownLatch h = hold;
+            if (h == null) {
+                return;
+            }
+            entered.countDown();
+            try {
+                h.await(60, TimeUnit.SECONDS); // 테스트 제한(30초)보다 길게 붙잡아, 응답이 감지를 기다리면 실패하게 한다
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -53,6 +89,7 @@ class EventControllerTest {
 
     @Autowired MockMvc mvc;
     @Autowired InMemoryEventLog log;
+    @Autowired SlowDetection detection;
 
     @AfterEach
     void restore() {
@@ -98,6 +135,23 @@ class EventControllerTest {
         assertThat(emitted).extracting(SimEvent::code).contains("STOPPED", "RESTARTED", "DIVERT_RELEASED", "READ_NORMAL");
         for (SimEvent e : emitted) {
             send(JSON.writeValueAsString(e)).andExpect(status().isOk());
+        }
+    }
+
+    // 응답이 감지 주기를 기다리면 시뮬레이터 전송이 읽기 타임아웃에 걸려 큐가 밀린다. 타임아웃은 교착 감지용이다.
+    @Test
+    @Timeout(30)
+    void respondsWhileDetectionIsStuckOnASlowGateway() throws Exception {
+        CountDownLatch hold = new CountDownLatch(1);
+        detection.hold = hold;
+        try {
+            send(event(UUID.randomUUID().toString(), "CV-3", "STOPPED")).andExpect(status().isOk());
+
+            assertThat(detection.entered.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(hold.getCount()).isEqualTo(1);
+        } finally {
+            detection.hold = null;
+            hold.countDown();
         }
     }
 

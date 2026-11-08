@@ -9,6 +9,7 @@ import com.example.controltower.domain.ChuteStatus;
 import com.example.controltower.domain.ConveyorStatus;
 import com.example.controltower.domain.EquipmentEvent;
 import com.example.controltower.domain.FaultClass;
+import com.example.controltower.domain.GatewayUnavailableException;
 import com.example.controltower.domain.Incident;
 import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.RobotStatus;
@@ -29,9 +30,14 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -54,8 +60,9 @@ class PlantStatusServiceTest {
     private final InMemoryEventLog log = new InMemoryEventLog();
     private final InMemoryIncidents incidents = new InMemoryIncidents();
     private final InMemoryMaintenanceDesk desk = new InMemoryMaintenanceDesk();
+    private final ExecutorService reads = Executors.newVirtualThreadPerTaskExecutor();
     private final PlantStatusService service = new PlantStatusService(
-            conveyors, sorters, fleet, log, incidents, desk, LineTopology.DEFAULT, Clock.fixed(NOW, ZoneOffset.UTC));
+            conveyors, sorters, fleet, log, incidents, desk, LineTopology.DEFAULT, Clock.fixed(NOW, ZoneOffset.UTC), reads);
 
     private static EquipmentEvent event(String id, String equipment, String code, Integer value, Instant at) {
         return new EquipmentEvent(id, equipment, code, value, at);
@@ -68,6 +75,56 @@ class PlantStatusServiceTest {
 
     private EquipmentView scanner() {
         return service.equipment("SC-1").orElseThrow();
+    }
+
+    // 설비군마다 읽기 타임아웃을 기다리면 모두 응답하지 않을 때 상태 조회가 그 합만큼 걸린다.
+    // 세 설비군이 모두 들어온 뒤에야 풀리는 대역이라 차례로 읽으면 각자 기다리다 실패해 UNKNOWN이 된다.
+    @Test
+    @Timeout(30)
+    void snapshot_readsEquipmentGroupsInParallel() {
+        CountDownLatch allEntered = new CountDownLatch(3);
+        Runnable meet = () -> {
+            allEntered.countDown();
+            try {
+                if (!allEntered.await(5, TimeUnit.SECONDS)) {
+                    throw new GatewayUnavailableException("groups read one after another", null);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new GatewayUnavailableException("interrupted", e);
+            }
+        };
+        InMemoryConveyors meetingConveyors = new InMemoryConveyors(conveyors.all().toArray(ConveyorStatus[]::new)) {
+            @Override
+            public List<ConveyorStatus> all() {
+                meet.run();
+                return super.all();
+            }
+        };
+        InMemorySorters meetingSorters = new InMemorySorters(sorters.get()) {
+            @Override
+            public SorterStatus get() {
+                meet.run();
+                return super.get();
+            }
+        };
+        InMemoryRobotFleet meetingFleet = new InMemoryRobotFleet(fleet.all().toArray(RobotStatus[]::new)) {
+            @Override
+            public List<RobotStatus> all() {
+                meet.run();
+                return super.all();
+            }
+        };
+
+        PlantSnapshot snapshot = new PlantStatusService(meetingConveyors, meetingSorters, meetingFleet, log, incidents,
+                        desk, LineTopology.DEFAULT, Clock.fixed(NOW, ZoneOffset.UTC), reads)
+                .snapshot();
+
+        Map<String, RunState> states =
+                snapshot.equipment().stream().collect(Collectors.toMap(EquipmentView::id, EquipmentView::state));
+        assertThat(states).containsEntry("CV-1", RunState.RUNNING)
+                .containsEntry("SR-1", RunState.RUNNING)
+                .containsEntry("AMR-01", RunState.RUNNING);
     }
 
     @Test
