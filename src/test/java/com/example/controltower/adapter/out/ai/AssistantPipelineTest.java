@@ -4,9 +4,13 @@ import static com.example.controltower.support.FakeChatModel.finish;
 import static com.example.controltower.support.FakeChatModel.noGeneration;
 import static com.example.controltower.support.FakeChatModel.nullText;
 import static com.example.controltower.support.FakeChatModel.text;
+import static com.example.controltower.support.FakeChatModel.toolCall;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
+import com.example.controltower.adapter.in.tool.PlantTools;
 import com.example.controltower.application.port.in.AssistantChat;
+import com.example.controltower.application.port.in.ChatEvent.Action;
 import com.example.controltower.application.port.in.ChatEvent;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
@@ -14,24 +18,38 @@ import com.example.controltower.application.port.in.ChatEvent.Failed;
 import com.example.controltower.application.port.in.ChatEvent.Meta;
 import com.example.controltower.application.port.in.ChatEvent.Source;
 import com.example.controltower.application.port.in.ChatEvent.Sources;
+import com.example.controltower.application.port.in.PlantStatus;
+import com.example.controltower.application.port.in.ProposalResult;
+import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.application.service.AssistantChatService;
 import com.example.controltower.config.ControlTowerProperties;
 import com.example.controltower.domain.Actor;
+import com.example.controltower.domain.CommandSpec;
+import com.example.controltower.domain.CommandStatus;
+import com.example.controltower.domain.PendingCommand;
+import com.example.controltower.domain.Role;
 import com.example.controltower.support.FakeChatModel;
 import com.example.controltower.support.FakeEmbeddingModel;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -46,7 +64,11 @@ class AssistantPipelineTest {
             .metadata(Map.of("question", "환불 되나요"))
             .build();
 
+    private static final Actor OPERATOR = new Actor("operator", Role.OPERATOR);
+    private static final Instant NOW = Instant.parse("2026-11-08T00:00:00Z");
+
     private final UUID id = UUID.randomUUID();
+    private final Map<CommandSpec, PendingCommand> cards = new ConcurrentHashMap<>();
     private final FakeChatModel model = new FakeChatModel();
     private final InMemoryChatMemoryRepository repository = new InMemoryChatMemoryRepository();
     private final AssistantChat service = service(faqStore());
@@ -64,16 +86,32 @@ class AssistantPipelineTest {
     private AssistantChat service(VectorStore store, Duration idleTimeout) {
         var props = new ControlTowerProperties("chat-model", "rewrite-model", 1000, 3, 0.5, idleTimeout, "test-index");
         ChatClient client = new AssistantConfig().assistantChatClient(
-                ChatClient.builder(model),
+                // 운영의 tool-calling.advisor-order와 같은 값
+                ChatClient.builder(model, ObservationRegistry.NOOP, null, null,
+                        ToolCallingAdvisor.builder().advisorOrder(20)),
                 ChatClient.builder(model),
                 MessageWindowChatMemory.builder().chatMemoryRepository(repository).build(),
                 store,
-                props);
+                props,
+                MethodToolCallbackProvider.builder()
+                        .toolObjects(new PlantTools(mock(PlantStatus.class), this::propose))
+                        .build());
         return new AssistantChatService(new SpringAiAssistant(client), idleTimeout);
+    }
+
+    // 같은 인자는 같은 카드, 다른 인자는 새 카드를 돌려준다. 서비스의 재사용·무효화 규칙을 흉내 낸다.
+    private ProposalResult propose(CommandSpec spec, Actor actor) {
+        PendingCommand card = cards.computeIfAbsent(spec, s -> new PendingCommand(UUID.randomUUID(), actor.accountId(),
+                s, "digest", "영향 " + s.targetId(), CommandStatus.PENDING, NOW, NOW.plusSeconds(120)));
+        return new ProposalResult.Proposed(card);
     }
 
     private List<ChatEvent> run(String message) {
         return service.stream(id, message, Actor.ANONYMOUS).collectList().block();
+    }
+
+    private List<ChatEvent> runAsOperator(String message) {
+        return service.stream(id, message, OPERATOR).collectList().block();
     }
 
     private void enqueue(ChatResponse... chunks) {
@@ -315,5 +353,74 @@ class AssistantPipelineTest {
                 .filteredOn(m -> m.getMessageType() == MessageType.USER)
                 .extracting(Message::getText)
                 .contains("환불 되나요");
+    }
+
+    @Test
+    void actionEmittedAfterLastDeltaBeforeDone() {
+        model.enqueueStream(Flux.just(text("확인합니다 "), toolCall("c1", "proposeRestart", "{\"conveyorId\":\"CV-3\"}")));
+        enqueue(text("카드를 확인해 주세요"), finish("end_turn"));
+
+        List<ChatEvent> events = runAsOperator("CV-3 재가동해");
+
+        PendingCommand card = cards.get(new CommandSpec.Restart("CV-3"));
+        assertThat(events.subList(events.size() - 4, events.size())).containsExactly(
+                new Delta("확인합니다 "),
+                new Delta("카드를 확인해 주세요"),
+                new Action(card.id(), "RESTART", "CV-3", "CV-3 재가동", "영향 CV-3", card.expiresAt()),
+                new Done());
+    }
+
+    @Test
+    void streamFails_noAction() {
+        model.enqueueStream(Flux.just(toolCall("c1", "proposeRestart", "{\"conveyorId\":\"CV-3\"}")));
+        model.enqueueStream(Flux.concat(Flux.just(text("카드")), Flux.error(new RuntimeException("secret"))));
+
+        List<ChatEvent> events = runAsOperator("CV-3 재가동해");
+
+        assertThat(cards).hasSize(1);
+        assertThat(events).noneMatch(Action.class::isInstance).doesNotContain(new Done());
+        assertThat(((Failed) events.getLast()).code()).isEqualTo("UPSTREAM");
+    }
+
+    @Test
+    void oneCardPerProposal() {
+        model.enqueueStream(Flux.just(new ChatResponse(List.of(new Generation(AssistantMessage.builder()
+                .content("")
+                .toolCalls(List.of(
+                        call("c1", "proposeRestart", "{\"conveyorId\":\"CV-3\"}"),
+                        call("c2", "proposeRestart", "{\"conveyorId\":\"CV-3\"}"),
+                        call("c3", "proposeDivert", "{\"fromChute\":\"CH-03\",\"toChute\":\"CH-04\"}"),
+                        call("c4", "proposeDivert", "{\"fromChute\":\"CH-03\",\"toChute\":\"CH-05\"}")))
+                .build())))));
+        enqueue(text("끝"), finish("end_turn"));
+
+        List<ChatEvent> events = runAsOperator("정리해 줘");
+
+        // 같은 카드는 한 번만, 같은 대상의 새 카드는 이전 카드를 대신한다.
+        assertThat(events).filteredOn(Action.class::isInstance)
+                .extracting(e -> ((Action) e).commandId())
+                .containsExactly(
+                        cards.get(new CommandSpec.Restart("CV-3")).id(),
+                        cards.get(new CommandSpec.Divert("CH-03", "CH-05")).id());
+    }
+
+    @Test
+    void assistantThrowingSynchronously_metaThenFailed() {
+        ControlAssistant throwing = (conversationId, message, scope) -> {
+            throw new IllegalStateException("secret");
+        };
+
+        List<ChatEvent> events = new AssistantChatService(throwing, Duration.ofSeconds(5))
+                .stream(id, "hi", Actor.ANONYMOUS)
+                .collectList()
+                .block();
+
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0)).isEqualTo(new Meta(id));
+        assertThat(((Failed) events.get(1)).code()).isEqualTo("UPSTREAM");
+    }
+
+    private static AssistantMessage.ToolCall call(String id, String name, String args) {
+        return new AssistantMessage.ToolCall(id, "function", name, args);
     }
 }

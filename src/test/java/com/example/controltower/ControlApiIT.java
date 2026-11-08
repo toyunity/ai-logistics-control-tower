@@ -18,6 +18,7 @@ import com.example.controltower.domain.RunState;
 import com.example.controltower.simulator.PlantSimulator;
 import com.example.controltower.simulator.SimSnapshot;
 import com.example.controltower.support.FakeAiConfig;
+import com.example.controltower.support.FakeChatModel;
 import com.example.controltower.support.TestInfraConfig;
 import java.net.CookieManager;
 import java.net.URI;
@@ -27,6 +28,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.AfterEach;
@@ -37,12 +39,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import reactor.core.publisher.Flux;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 시뮬레이터, PostgreSQL, 실제 HTTP로 세션부터 설비 반영까지 본다. 시뮬레이터 틱이 돌아야 안전 신호가 3초 한도 안에 있다.
- * 제안 도구는 다음 작업이라 카드는 ProposeCommand로 만든다.
+ * 카드는 대부분 ProposeCommand로 만들고, 대화부터 확정까지의 경로는 가짜 모델이 도구를 부르는 시험 하나로 본다.
  */
 @SpringBootTest(
         webEnvironment = WebEnvironment.RANDOM_PORT,
@@ -59,6 +62,7 @@ class ControlApiIT {
     @Autowired PendingCommands pending;
     @Autowired Sorters sorters;
     @Autowired Conveyors conveyors;
+    @Autowired FakeChatModel model;
 
     private final HttpClient http = HttpClient.newBuilder().cookieHandler(new CookieManager()).build();
 
@@ -112,6 +116,33 @@ class ControlApiIT {
         return StreamSupport.stream(status.get("incidents").spliterator(), false)
                 .anyMatch(i -> i.get("equipmentId").asString().equals(equipmentId)
                         && i.get("kind").asString().equals(kind));
+    }
+
+    @Test
+    void chatToolCardThenHttpConfirm_simulatorChanges() throws Exception {
+        loginOperator();
+        startChuteJamUntilBlocked();
+        model.reset();
+        model.enqueueStream(Flux.just(FakeChatModel.text("우회를 제안합니다 "),
+                FakeChatModel.toolCall("c1", "proposeDivert", "{\"fromChute\":\"CH-03\",\"toChute\":\"CH-04\"}")));
+        model.enqueueStream(Flux.just(FakeChatModel.text("아래 카드에서 확정해 주세요"), FakeChatModel.finish("end_turn")));
+
+        String sse = post("/api/chat/stream", "{\"message\":\"CH-03을 CH-04로 우회해\"}").body();
+
+        List<String> lines = sse.lines().toList();
+        int action = lines.indexOf("event:action");
+        assertThat(action).isPositive();
+        assertThat(lines.subList(action, lines.size())).contains("event:done");
+        JsonNode card = JSON.readTree(lines.get(action + 1).substring("data:".length()));
+        assertThat(card.get("kind").asString()).isEqualTo("DIVERT");
+        assertThat(card.get("targetId").asString()).isEqualTo("CH-03");
+        assertThat(sim.snapshot().reroutes()).doesNotContain(new SimSnapshot.Reroute(3, 4));
+
+        HttpResponse<String> response = confirm(UUID.fromString(card.get("commandId").asString()));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(json(response).get("status").asString()).isEqualTo("SUCCEEDED");
+        assertThat(sim.snapshot().reroutes()).contains(new SimSnapshot.Reroute(3, 4));
     }
 
     @Test

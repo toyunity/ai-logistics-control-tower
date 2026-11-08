@@ -19,6 +19,7 @@ import org.springframework.ai.rag.generation.augmentation.QueryAugmenter;
 import org.springframework.ai.rag.preretrieval.query.transformation.CompressionQueryTransformer;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -55,7 +56,8 @@ public class AssistantConfig {
             ChatClient.Builder rewriter,
             ChatMemory memory,
             VectorStore store,
-            ControlTowerProperties props) {
+            ControlTowerProperties props,
+            ToolCallbackProvider tools) {
         // CompressionQueryTransformer가 빌드 시점에 클라이언트를 만들므로 옵션을 먼저 넣어야 한다.
         rewriter.defaultOptions(options(props.rewriteModel(), props));
         QueryTransformer compression = CompressionQueryTransformer.builder().chatClientBuilder(rewriter).build();
@@ -78,7 +80,9 @@ public class AssistantConfig {
                 : withContext.augment(q, docs);
 
         // 메모리가 먼저 돌아야 원래 질문이 저장되고 RAG가 이력을 받는다.
+        // 도구 반복 advisor는 RAG 안쪽(application.yaml의 tool-calling.advisor-order)이라 메모리와 검색이 턴당 한 번 돈다.
         return main.defaultOptions(options(props.chatModel(), props))
+                .defaultToolCallbacks(tools.getToolCallbacks())
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
                         MessageChatMemoryAdvisor.builder(new SkipBlankAssistant(memory)).order(0).build(),

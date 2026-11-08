@@ -29,6 +29,7 @@ spring:
       id-type: TEXT                 # 기본값 UUID이면 "refund-policy" 같은 ID가 실패한다
       dimensions: 1536
     chat.memory.repository.jdbc.initialize-schema: always
+    chat.client.tool-calling.advisor-order: 20   # 기본값은 메모리(0)와 RAG(10) 바깥이라 도구 반복마다 검색과 재작성이 다시 돈다
 server.servlet.session.cookie.same-site: lax   # 다른 사이트에서 보낸 확정 POST에 세션 쿠키가 실리지 않게 한다
 logging.level.org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR   # WARN은 거부된 사용자 입력을 그대로 남긴다
 controltower:

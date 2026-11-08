@@ -1,6 +1,8 @@
 package com.example.controltower.application.port.in;
 
 import com.example.controltower.domain.Actor;
+import com.example.controltower.domain.PendingCommand;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class TurnScope {
@@ -22,5 +24,11 @@ public final class TurnScope {
 
     public boolean tryCount() {
         return toolCalls.incrementAndGet() <= maxToolCalls;
+    }
+
+    public void add(PendingCommand command) {}
+
+    public List<PendingCommand> proposed() {
+        return List.of();
     }
 }

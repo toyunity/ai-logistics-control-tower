@@ -7,6 +7,7 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.net.CookieManager;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,6 +21,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -69,7 +71,9 @@ class RealBeansStubIT {
             respond(x, "application/json", embeddingResponse(JSON.readTree(captured.body()).get("input").size()));
         } else {
             MESSAGES.add(captured);
-            respond(x, "text/event-stream", THINKING_THEN_WHITESPACE_DELTA);
+            String body = captured.body();
+            respond(x, "text/event-stream", body.contains("tool_result") ? AFTER_TOOL
+                    : body.contains(TOOL_MARKER) ? TOOL_USE : THINKING_THEN_WHITESPACE_DELTA);
         }
     }
 
@@ -128,6 +132,62 @@ class RealBeansStubIT {
 
             """;
 
+    private static final String TOOL_MARKER = "정비 요청 왕복 확인";
+
+    private static final String TOOL_USE = """
+            event: message_start
+            data: {"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":5,"output_tokens":1}}}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"요청합니다 "}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"proposeMaintenance","input":{}}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"equipmentId\\":\\"CV-2\\","}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\\"summary\\":\\"벨트 소음\\"}"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":1}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":5}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+
+            """;
+
+    private static final String AFTER_TOOL = """
+            event: message_start
+            data: {"type":"message_start","message":{"id":"msg_3","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":5,"output_tokens":1}}}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"카드를 확인해 주세요."}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+
+            """;
+
     @LocalServerPort int port;
 
     @Test
@@ -137,16 +197,70 @@ class RealBeansStubIT {
         assertThat(input.toString()).doesNotContain("hash:", "category:");
     }
 
+    private static String post(HttpClient http, String url, String json) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(URI.create(url))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                BodyHandlers.ofString()).body();
+    }
+
+    private static void assertNoForbiddenOptions(JsonNode body) {
+        for (String rejectedByApi : List.of("temperature", "top_p", "top_k", "thinking")) {
+            assertThat(body.has(rejectedByApi)).as(rejectedByApi).isFalse();
+        }
+    }
+
+    @Test
+    void toolUseRoundTripKeepsIdentityOutOfTheRequest() throws Exception {
+        HttpClient http = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .cookieHandler(new CookieManager())
+                .build();
+        post(http, "http://localhost:" + port + "/api/session", "{\"accountId\":\"operator\"}");
+        MESSAGES.clear();
+        int embeddingsBefore = EMBEDDINGS.size();
+
+        String sse = post(http, "http://localhost:" + port + "/api/chat/stream", "{\"message\":\"" + TOOL_MARKER + "\"}");
+
+        assertThat(sse.lines().filter(l -> l.startsWith("event:")).toList()).containsExactly(
+                "event:meta", "event:sources", "event:delta", "event:delta", "event:action", "event:done");
+        assertThat(sse).contains("\"kind\":\"MAINTENANCE\"").contains("\"targetId\":\"CV-2\"");
+        // 운영 설정의 도구 advisor 순서가 RAG 안쪽이어야 두 번의 모델 호출에 검색이 한 번이다.
+        assertThat(EMBEDDINGS.size() - embeddingsBefore).isEqualTo(1);
+        assertThat(MESSAGES).hasSize(2);
+
+        JsonNode first = JSON.readTree(MESSAGES.get(0).body());
+        assertThat(first.get("tools")).hasSize(8);
+        assertThat(StreamSupport.stream(first.get("tools").spliterator(), false).map(t -> t.get("name").asString()))
+                .containsExactlyInAnyOrder("getPlantStatus", "getEquipment", "getTimeline", "diagnose",
+                        "proposeRestart", "proposeDivert", "proposeReassign", "proposeMaintenance");
+        assertThat(first.toString()).contains("\"conveyorId\"").doesNotContain("arg0");
+
+        JsonNode second = JSON.readTree(MESSAGES.get(1).body());
+        JsonNode toolResult = StreamSupport.stream(second.get("messages").spliterator(), false)
+                .flatMap(m -> m.get("content").isArray()
+                        ? StreamSupport.stream(m.get("content").spliterator(), false)
+                        : java.util.stream.Stream.<JsonNode>empty())
+                .filter(c -> c.get("type").asString().equals("tool_result"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(toolResult.get("tool_use_id").asString()).isEqualTo("toolu_1");
+        assertThat(toolResult.toString()).contains("OK").contains("MAINTENANCE").doesNotContain("벨트 소음");
+
+        for (Captured request : MESSAGES) {
+            assertThat(request.body()).doesNotContain("operator").doesNotContain("turnScope");
+            assertNoForbiddenOptions(JSON.readTree(request.body()));
+        }
+    }
+
     @Test
     void chatStreamSendsTheConfiguredRequestAndMapsTheReply() throws Exception {
         MESSAGES.clear();
-        String sse = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/chat/stream"))
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "text/event-stream")
-                        .POST(HttpRequest.BodyPublishers.ofString("{\"message\":\"환불은 며칠 안에 가능한가요?\"}"))
-                        .build(),
-                BodyHandlers.ofString()).body();
+        String sse = post(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
+                "http://localhost:" + port + "/api/chat/stream", "{\"message\":\"환불은 며칠 안에 가능한가요?\"}");
 
         assertThat(sse.lines().filter(l -> l.startsWith("event:")).toList()).containsExactly(
                 "event:meta", "event:sources", "event:delta", "event:delta", "event:delta", "event:done");
@@ -158,9 +272,7 @@ class RealBeansStubIT {
         assertThat(body.get("model").asString()).isEqualTo("claude-opus-5-5");
         assertThat(body.at("/output_config/effort").asString()).isEqualTo("low");
         assertThat(body.get("max_tokens").asInt()).isEqualTo(8000);
-        for (String rejectedByApi : List.of("temperature", "top_p", "top_k", "thinking")) {
-            assertThat(body.has(rejectedByApi)).as(rejectedByApi).isFalse();
-        }
+        assertNoForbiddenOptions(body);
         // 적용된 타임아웃은 이 헤더로만 확인할 수 있다.
         assertThat(request.headers().getFirst("X-stainless-timeout")).isEqualTo("600");
     }

@@ -1,5 +1,6 @@
 package com.example.controltower.config;
 
+import com.example.controltower.adapter.in.tool.PlantTools;
 import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.DecideCommand;
 import com.example.controltower.application.port.in.DetectAnomalies;
@@ -36,6 +37,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,6 +59,11 @@ public class ServiceConfig {
     @Bean
     AssistantChat assistantChat(ControlAssistant assistant, ControlTowerProperties props) {
         return new AssistantChatService(assistant, props.streamIdleTimeout());
+    }
+
+    @Bean
+    ToolCallbackProvider plantTools(PlantStatus status, ProposeCommand propose) {
+        return MethodToolCallbackProvider.builder().toolObjects(new PlantTools(status, propose)).build();
     }
 
     @Bean

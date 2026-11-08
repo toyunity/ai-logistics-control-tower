@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
+import com.example.controltower.application.port.in.ChatEvent.Action;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
 import com.example.controltower.application.port.in.ChatEvent.Failed;
@@ -23,6 +24,7 @@ import com.example.controltower.application.port.in.ChatEvent.Sources;
 import com.example.controltower.domain.Actor;
 import com.example.controltower.domain.Role;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -64,6 +66,20 @@ class ChatControllerTest {
                 .contains("event:delta\ndata:{\"text\":\" \"}")
                 .contains("event:done\ndata:{}")
                 .contains("event:error\ndata:{\"code\":\"UPSTREAM\",\"message\":\"m\"}");
+    }
+
+    @Test
+    void writesActionEvent() throws Exception {
+        UUID commandId = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        when(service.stream(any(), any(), any())).thenReturn(Flux.just(
+                new Action(commandId, "RESTART", "CV-3", "CV-3 재가동", "CV-3 구간 재가동", Instant.parse("2026-11-08T00:02:00Z")),
+                new Done()));
+
+        var result = streamOk("{\"message\":\"hi\"}");
+
+        assertThat(result.andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .contains("event:action\ndata:{\"commandId\":\"" + commandId + "\",\"kind\":\"RESTART\",\"targetId\":\"CV-3\","
+                        + "\"summary\":\"CV-3 재가동\",\"impact\":\"CV-3 구간 재가동\",\"expiresAt\":\"2026-11-08T00:02:00Z\"}");
     }
 
     @Test
