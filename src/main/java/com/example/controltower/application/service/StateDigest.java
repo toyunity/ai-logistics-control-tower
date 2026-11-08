@@ -21,9 +21,13 @@ final class StateDigest {
 
     /** 규칙을 통과한 뒤에 부른다. 슈트가 없으면 예외다. */
     static String of(CommandSpec.Divert spec, SorterStatus sorter) {
+        ChuteStatus from = chute(sorter, spec.fromChute());
+        ChuteStatus to = chute(sorter, spec.toChute());
+        // 막힘과 만재는 RUNNING 상태 그대로 보고되므로 따로 넣는다.
         return "sorter=" + sorter.state()
-                + "|from=" + chute(sorter, spec.fromChute()).state()
-                + "|to=" + chute(sorter, spec.toChute()).state()
+                + "|blocked=" + sorter.blocked()
+                + "|from=" + from.state() + "/" + from.full()
+                + "|to=" + to.state() + "/" + to.full()
                 + "|diversions=" + new TreeMap<>(sorter.diversions());
     }
 

@@ -31,6 +31,11 @@ import com.example.controltower.domain.SafetyPolicy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalTime;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,6 +45,8 @@ public class ServiceConfig {
 
     private static final Duration CARD_TTL = Duration.ofMinutes(2);
     private static final SafetyLimits SAFETY_LIMITS = new SafetyLimits(Duration.ofSeconds(3), 30);
+    // 설비 읽기는 타임아웃까지 블로킹하므로 요청이 몰려도 스레드가 모자라지 않게 가상 스레드를 쓴다.
+    private static final Executor PLANT_READS = Executors.newVirtualThreadPerTaskExecutor();
 
     @Bean
     Clock clock() {
@@ -60,7 +67,8 @@ public class ServiceConfig {
             Incidents incidents,
             MaintenanceDesk desk,
             Clock clock) {
-        return new PlantStatusService(conveyors, sorters, fleet, events, incidents, desk, LineTopology.DEFAULT, clock);
+        return new PlantStatusService(conveyors, sorters, fleet, events, incidents, desk, LineTopology.DEFAULT, clock,
+                PLANT_READS);
     }
 
     @Bean
@@ -106,9 +114,15 @@ public class ServiceConfig {
                 conveyors, sorters, fleet, events, incidents, LineTopology.DEFAULT, clock, LocalTime.parse(cutoff));
     }
 
+    // 실행 중 하나와 대기 하나만 둔다. 이벤트가 몰려도 감지가 줄줄이 쌓이지 않고, 버린 몫은 5초 주기가 맡는다.
+    // Executor 빈으로 내놓으면 스프링 기본 작업 실행기가 꺼지므로 빈으로 등록하지 않는다.
     @Bean
     IngestEvent ingestEvent(EventLog events, DetectAnomalies detection) {
-        return new IngestEventService(events, LineTopology.DEFAULT, detection);
+        ThreadPoolExecutor detectionExecutor = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(1), Thread.ofPlatform().name("ingest-detection").daemon().factory(),
+                new ThreadPoolExecutor.DiscardPolicy());
+        detectionExecutor.allowCoreThreadTimeOut(true);
+        return new IngestEventService(events, LineTopology.DEFAULT, detection, detectionExecutor);
     }
 
     @Bean
