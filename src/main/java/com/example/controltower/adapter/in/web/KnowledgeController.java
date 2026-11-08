@@ -18,7 +18,7 @@ public class KnowledgeController {
         this.knowledgeSearch = knowledgeSearch;
     }
 
-    @GetMapping("/api/faqs/search")
+    @GetMapping("/api/knowledge/search")
     List<KnowledgeHit> search(@RequestParam @NotBlank @Size(max = 500) String q) {
         return knowledgeSearch.search(q);
     }

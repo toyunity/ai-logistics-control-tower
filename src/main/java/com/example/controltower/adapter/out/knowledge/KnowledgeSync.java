@@ -35,7 +35,7 @@ public class KnowledgeSync implements ApplicationRunner {
         this.props = props;
     }
 
-    // 임베딩 실패는 그대로 던져 기동을 막는다. 낡은 FAQ로 답하는 것보다 낫다.
+    // 임베딩 실패는 그대로 던져 기동을 막는다. 낡은 문서로 답하는 것보다 낫다.
     @Override
     public void run(ApplicationArguments args) throws Exception {
         try (InputStream in = new ClassPathResource("knowledge/documents.json").getInputStream()) {
@@ -44,17 +44,17 @@ public class KnowledgeSync implements ApplicationRunner {
     }
 
     // 여러 인스턴스가 동시에 떠도 upsert라 결과가 같으므로 락을 걸지 않는다.
-    public void sync(List<KnowledgeDocument> entries) {
-        if (entries.isEmpty()) {
-            throw new IllegalArgumentException("faqs.json is empty");
+    public void sync(List<KnowledgeDocument> docs) {
+        if (docs.isEmpty()) {
+            throw new IllegalArgumentException("documents.json is empty");
         }
         Set<String> ids = new HashSet<>();
-        for (KnowledgeDocument e : entries) {
+        for (KnowledgeDocument e : docs) {
             if (isBlank(e.id()) || isBlank(e.category()) || isBlank(e.title()) || isBlank(e.body())) {
-                throw new IllegalArgumentException("FAQ fields must not be blank: " + e.id());
+                throw new IllegalArgumentException("Document fields must not be blank: " + e.id());
             }
             if (!ids.add(e.id())) {
-                throw new IllegalArgumentException("Duplicate FAQ id: " + e.id());
+                throw new IllegalArgumentException("Duplicate document id: " + e.id());
             }
         }
 
@@ -63,14 +63,14 @@ public class KnowledgeSync implements ApplicationRunner {
             existing.put(rs.getString(1), rs.getString(2));
         });
 
-        List<Document> changed = entries.stream()
+        List<Document> changed = docs.stream()
                 .filter(e -> !hash(e).equals(existing.get(e.id())))
                 .map(e -> Document.builder()
                         .id(e.id())
-                        .text("Q: " + e.title() + "\nA: " + e.body())
+                        .text("제목: " + e.title() + "\n내용: " + e.body())
                         .metadata(Map.of(
-                                "question", e.title(),
-                                "answer", e.body(),
+                                "title", e.title(),
+                                "body", e.body(),
                                 "category", e.category(),
                                 "hash", hash(e)))
                         .build())

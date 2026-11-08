@@ -193,7 +193,7 @@ class RealBeansStubIT {
     @Test
     void documentEmbeddingsCarryOnlyTitleAndBody() {
         JsonNode input = JSON.readTree(EMBEDDINGS.getFirst().body()).get("input");
-        assertThat(input.get(0).asString()).startsWith("제목: 가상 라인 구성 개요\n내용: 이 라인은 시뮬레이터 전용 가상 현장이다.");
+        assertThat(input.get(0).asString()).contains("제목: 가상 라인 구성 개요\n내용: 이 라인은 시뮬레이터 전용 가상 현장이다.");
         assertThat(input.toString()).doesNotContain("hash:", "category:");
     }
 

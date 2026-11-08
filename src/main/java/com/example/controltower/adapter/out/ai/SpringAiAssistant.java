@@ -49,7 +49,7 @@ public class SpringAiAssistant implements ControlAssistant {
         if (retrievedSent.compareAndSet(false, true)) {
             var docs = (List<Document>) r.context().get(RetrievalAugmentationAdvisor.DOCUMENT_CONTEXT);
             chunks.add(new AssistantChunk.Retrieved(docs.stream()
-                    .map(d -> new Source(d.getId(), (String) d.getMetadata().get("question"), d.getScore()))
+                    .map(d -> new Source(d.getId(), (String) d.getMetadata().get("title"), d.getScore()))
                     .toList()));
         }
         // 버리지 않고 빈 Text로 넘긴다. 서비스의 유휴 타이머는 업스트림 청크마다 초기화되어야 한다.

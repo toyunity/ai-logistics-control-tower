@@ -20,7 +20,7 @@ class DemoEmbeddingModel implements EmbeddingModel {
 
     private static final int DIMENSIONS = 1536;
     private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]+");
-    // 질문 어미가 겹치는 것만으로 무관한 질문이 FAQ에 걸리지 않게 뺀다.
+    // 질문 어미가 겹치는 것만으로 무관한 질문이 문서에 걸리지 않게 뺀다.
     private static final Set<String> STOP_WORDS = Set.of(
             "어떻게", "얼마나", "하나요", "있나요", "되나요", "인가요", "해요", "어때요",
             "싶어요", "하고", "주세요", "알려주세요", "뭐예요", "뭔가요", "언제", "어디서");
