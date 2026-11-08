@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>상담 챗봇</title>
+<title>설비 관제 어시스턴트</title>
 <link rel="icon" href="data:,">
 <style>
   :root {
@@ -11,23 +11,31 @@
     --bg: #ffffff; --text: #1a1a1a; --muted: #595959; --border: #c9ccd1;
     --bot: #f2f3f5; --user: #1f5fbf; --user-text: #ffffff;
     --error: #a3001d; --error-bg: #fdecee;
+    --warn-bg: #fff4d6; --warn: #6b4a00; --ok: #1d6b2f;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #15171a; --text: #e8e8e8; --muted: #a8adb4; --border: #43474d;
       --bot: #24272c; --user: #2f6fd0; --user-text: #ffffff;
       --error: #ffb3bd; --error-bg: #3a1c20;
+      --warn-bg: #3a3014; --warn: #ffd98a; --ok: #8fd6a0;
     }
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { margin: 0; }
   body {
-    display: flex; flex-direction: column; height: 100dvh;
-    max-width: 720px; margin: 0 auto;
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
     background: var(--bg); color: var(--text);
     font: 16px/1.5 system-ui, sans-serif;
   }
-  h1 { margin: 0; padding: 12px 16px; font-size: 18px; border-bottom: 1px solid var(--border); }
+  h1 { grid-column: 1 / -1; margin: 0; padding: 12px 16px; font-size: 18px; border-bottom: 1px solid var(--border); }
+  main { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+  aside { min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
+  @media (max-width: 720px) {
+    body { display: block; height: auto; }
+    main { height: 80dvh; border-right: 0; border-bottom: 1px solid var(--border); }
+  }
   #log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
   .msg {
     width: fit-content; max-width: 85%; margin-bottom: 12px; padding: 8px 12px; border-radius: 12px;
@@ -39,50 +47,136 @@
   .sources { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 14px; color: var(--muted); }
   .sources h2 { margin: 0; font-size: inherit; }
   .sources ul { margin: 4px 0 0; padding-left: 20px; }
+  .card { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); white-space: normal; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card p { margin: 4px 0; font-size: 14px; }
+  .card .muted { color: var(--muted); }
+  .card .actions { display: flex; gap: 8px; margin-top: 8px; }
+  .card .actions button { padding: 4px 12px; }
   #error { margin: 0 16px 8px; padding: 8px 12px; border-radius: 8px; background: var(--error-bg); color: var(--error); }
   form { padding: 8px 16px 16px; border-top: 1px solid var(--border); }
   label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--muted); }
   .row { display: flex; gap: 8px; }
-  textarea {
-    flex: 1; min-width: 0; padding: 8px; resize: none; font: inherit;
-    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  textarea, select {
+    font: inherit; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
   }
+  textarea { flex: 1; min-width: 0; padding: 8px; resize: none; }
+  select { width: 100%; padding: 6px 8px; }
   button {
     padding: 0 16px; font: inherit; border: 0; border-radius: 8px;
     background: var(--user); color: var(--user-text); cursor: pointer;
   }
+  button.secondary { background: var(--bot); color: var(--text); border: 1px solid var(--border); }
   button:disabled { opacity: .5; cursor: not-allowed; }
+  aside h2 { margin: 0 0 8px; font-size: 17px; }
+  aside h3 { margin: 16px 0 6px; font-size: 15px; }
+  aside ul { margin: 0; padding: 0; list-style: none; }
+  aside li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 14px; overflow-wrap: anywhere; }
+  aside li button { padding: 2px 10px; font-size: 13px; margin-left: 6px; }
+  .note { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  #conn { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--error-bg); color: var(--error); font-size: 14px; }
+  #incidents li { background: var(--warn-bg); color: var(--warn); padding: 6px 8px; border-radius: 6px; border: 0; margin-bottom: 4px; }
+  .state-RUNNING { color: var(--ok); }
+  .state-STOPPED, .state-FAULT, .state-OFFLINE, .state-UNKNOWN { color: var(--error); font-weight: 600; }
+  .state-DEGRADED { color: var(--warn); font-weight: 600; }
+  .sim { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sim button { padding: 4px 10px; font-size: 13px; }
 </style>
 </head>
 <body>
-<h1>상담 챗봇</h1>
-<div id="log" role="log" aria-live="polite" aria-label="대화 내용" tabindex="0"></div>
-<p id="error" role="alert" hidden></p>
-<form id="form">
-  <label for="input">질문 (Enter 전송, Shift+Enter 줄바꿈)</label>
-  <div class="row">
-    <textarea id="input" rows="2" maxlength="2000" autofocus></textarea>
-    <button id="send" type="submit">전송</button>
+<h1>설비 관제 어시스턴트 <small>(가상 설비 데모)</small></h1>
+<main>
+  <div id="log" role="log" aria-live="polite" aria-label="대화 내용" tabindex="0"></div>
+  <p id="error" role="alert" hidden></p>
+  <form id="form">
+    <label for="input">질문 (Enter 전송, Shift+Enter 줄바꿈)</label>
+    <div class="row">
+      <textarea id="input" rows="2" maxlength="2000" autofocus></textarea>
+      <button id="send" type="submit">전송</button>
+    </div>
+  </form>
+</main>
+<aside aria-labelledby="panel-title">
+  <h2 id="panel-title">상태 패널</h2>
+  <p id="conn" role="status" hidden>연결 끊김</p>
+
+  <label for="account">계정 (바꾸면 새 대화)</label>
+  <select id="account" autocomplete="off">
+    <option value="operator">관제 담당자 (operator)</option>
+    <option value="viewer">참관자 (viewer)</option>
+  </select>
+  <p id="whoami" class="note"></p>
+
+  <h3>장애 건</h3>
+  <ul id="incidents"></ul>
+  <p id="no-incidents" class="note">열린 장애 건이 없습니다.</p>
+
+  <h3>설비 상태</h3>
+  <ul id="equipment"></ul>
+
+  <h3>정비 목록</h3>
+  <ul id="maintenance"></ul>
+  <p id="no-maintenance" class="note">열린 정비 건이 없습니다.</p>
+  <p id="maintenance-msg" class="note" role="status"></p>
+
+  <h3>시뮬레이터 제어</h3>
+  <div class="sim">
+    <button type="button" class="secondary" data-scenario="chute-jam">슈트 만재</button>
+    <button type="button" class="secondary" data-scenario="robot-battery">로봇 배터리</button>
+    <button type="button" class="secondary" data-scenario="scanner-degraded">스캐너 저하</button>
+    <button type="button" class="secondary" data-scenario="worker-in-zone">작업자 진입</button>
+    <button type="button" class="secondary" data-scenario="safety-offline">안전 PLC 끊김</button>
+    <button type="button" id="sim-reset">리셋</button>
   </div>
-</form>
+  <p id="sim-msg" class="note" role="status"></p>
+</aside>
 <script>
   const STORAGE_KEY = 'conversationId';
+  const ACCOUNT_KEY = 'accountId';
+  const POLL_MS = 2000;
+  // 장애 중에는 상태 응답이 3초쯤 걸린다. 그보다 길게 기다린다.
+  const POLL_TIMEOUT_MS = 5000;
   const MSG_BAD_REQUEST = '질문을 보낼 수 없습니다. 내용을 확인한 뒤 다시 시도해 주세요.';
   const MSG_FAILED = '답변을 받지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  const MSG_UNSENT = '요청 결과를 받지 못했습니다. 실행 여부를 상태 패널에서 확인해 주세요.';
 
-  const log = document.getElementById('log');
-  const errorBox = document.getElementById('error');
-  const form = document.getElementById('form');
-  const input = document.getElementById('input');
-  const send = document.getElementById('send');
+  const KIND = { RESTART: '재가동', DIVERT: '슈트 우회', REASSIGN: '로봇 작업 재배정', MAINTENANCE: '정비 요청' };
+  const RESULT = { SUCCEEDED: '성공', FAILED: '실패', UNCONFIRMED: '미확인(현장 확인 필요)', REJECTED: '거절됨' };
+  const STATE = { RUNNING: '가동', STOPPED: '정지', FAULT: '고장', DEGRADED: '저하', OFFLINE: '연결 끊김', UNKNOWN: '알 수 없음' };
+  const INCIDENT = {
+    CONVEYOR_STOPPED: '컨베이어 정지', CHUTE_FULL: '슈트 만재', SCANNER_DEGRADED: '스캐너 읽기 저하', ROBOT_BATTERY: '로봇 배터리 저하',
+  };
+  // 데모 스텁이 알아듣는 문장으로 고른다. 장애 종류마다 진단 도구나 지식 문서로 이어진다.
+  const QUESTION = {
+    CONVEYOR_STOPPED: (id) => `${id} 왜 멈췄어?`,
+    CHUTE_FULL: (id) => `${id} 만재 원인이 뭐야?`,
+    SCANNER_DEGRADED: () => '스캐너 읽기 실패율이 올라갔어요',
+    ROBOT_BATTERY: () => '로봇 배터리 저하 대응 절차 알려줘',
+  };
 
-  // 저장소가 막혀 있으면 sessionStorage가 예외를 던진다. 그래도 이 변수로 대화는 이어진다.
-  let conversationId;
-  try { conversationId = sessionStorage.getItem(STORAGE_KEY) ?? undefined; } catch {}
+  const $ = (id) => document.getElementById(id);
+  const log = $('log');
+  const errorBox = $('error');
+  const form = $('form');
+  const input = $('input');
+  const send = $('send');
+  const account = $('account');
 
+  let busy = false;
+  let role = null;
+  const pendingCards = [];
+  const closing = new Set();
+
+  // 저장소가 막혀 있으면 sessionStorage가 예외를 던진다. 그래도 변수로 동작은 이어진다.
+  function load(key) { try { return sessionStorage.getItem(key) ?? undefined; } catch { return undefined; } }
+  function save(key, value) {
+    try { value === undefined ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value); } catch {}
+  }
+
+  let conversationId = load(STORAGE_KEY);
   function rememberConversation(id) {
     conversationId = id;
-    try { sessionStorage.setItem(STORAGE_KEY, id); } catch {}
+    save(STORAGE_KEY, id);
   }
 
   function append(parent, tag, className, text) {
@@ -93,17 +187,119 @@
     return el;
   }
 
-  function setBusy(busy) {
-    send.disabled = input.disabled = busy;
-    log.setAttribute('aria-busy', busy);
+  async function readJson(res) {
+    try { return await res.json(); } catch { return {}; }
   }
 
+  function setBusy(value) {
+    busy = value;
+    send.disabled = input.disabled = account.disabled = value;
+    for (const b of document.querySelectorAll('button.ask')) b.disabled = value;
+    log.setAttribute('aria-busy', value);
+  }
+
+  // ---- 세션 ----
+
+  async function login(accountId) {
+    account.disabled = true;
+    role = null;
+    $('whoami').textContent = '로그인 중…';
+    try {
+      const res = await fetch('/api/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }),
+      });
+      if (!res.ok) throw new Error('login');
+      const s = await res.json();
+      role = s.role ?? null;
+      save(ACCOUNT_KEY, accountId);
+      $('whoami').textContent = role === 'OPERATOR' ? '권한: 확정 가능' : '권한: 조회와 대화만 (확정 불가)';
+    } catch {
+      $('whoami').textContent = '로그인하지 못했습니다. 조회와 대화만 됩니다.';
+    }
+    account.disabled = busy;
+  }
+
+  account.addEventListener('change', async () => {
+    rememberConversation(undefined);
+    pendingCards.length = 0;
+    log.replaceChildren();
+    errorBox.hidden = true;
+    await login(account.value);
+  });
+
+  // ---- 확인 카드 ----
+
+  function renderCard(bot, a) {
+    const card = append(bot, 'div', 'card');
+    card.setAttribute('role', 'group');
+    append(card, 'h3', '', `확인 필요: ${KIND[a.kind] ?? a.kind ?? ''} · ${a.targetId ?? ''}`);
+    if (a.summary) append(card, 'p', '', a.summary);
+    if (a.impact) append(card, 'p', '', `영향(제안 시점 수치): ${a.impact}`);
+    const timer = append(card, 'p', 'muted');
+    const actions = append(card, 'div', 'actions');
+    const confirm = append(actions, 'button', '', '확정');
+    const reject = append(actions, 'button', 'secondary', '거절');
+    confirm.type = reject.type = 'button';
+    const result = append(card, 'p', '');
+    result.setAttribute('role', 'status');
+
+    const operator = role === 'OPERATOR';
+    if (!operator) append(card, 'p', 'muted', '참관자는 확정하거나 거절할 수 없습니다.');
+    const entry = { expiresAt: Date.parse(a.expiresAt), timer, confirm, reject, decided: !operator, expired: false };
+    confirm.disabled = reject.disabled = !operator;
+    confirm.addEventListener('click', () => decide(entry, a.commandId, 'confirm', result));
+    reject.addEventListener('click', () => decide(entry, a.commandId, 'reject', result));
+    pendingCards.push(entry);
+    tick(entry);
+  }
+
+  // 브라우저와 서버 시계가 다르면 표시가 어긋난다. 만료 판정은 서버가 한다.
+  function tick(entry) {
+    const left = Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1000));
+    if (!(left > 0)) {
+      entry.expired = true;
+      entry.confirm.disabled = entry.reject.disabled = true;
+      entry.timer.textContent = '만료됨. 다시 요청해 주세요.';
+      return;
+    }
+    entry.timer.textContent = `남은 시간 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  }
+
+  setInterval(() => {
+    for (let i = pendingCards.length - 1; i >= 0; i--) {
+      const entry = pendingCards[i];
+      if (entry.expired || !entry.timer.isConnected) { pendingCards.splice(i, 1); continue; }
+      tick(entry);
+    }
+  }, 1000);
+
+  async function decide(entry, commandId, verb, result) {
+    // 더블 클릭이 요청 두 건이 되지 않게 응답을 기다리기 전에 막는다.
+    if (entry.decided || entry.expired) return;
+    entry.decided = true;
+    entry.confirm.disabled = entry.reject.disabled = true;
+    result.textContent = '처리 중…';
+    try {
+      const res = await fetch(`/api/commands/${encodeURIComponent(commandId)}/${verb}`, { method: 'POST' });
+      const body = await readJson(res);
+      const message = body.message ?? (res.ok ? '처리했습니다.' : '처리할 수 없습니다.');
+      result.textContent = res.ok && body.status ? `${message} (결과: ${RESULT[body.status] ?? body.status})` : message;
+    } catch {
+      // 전송됐는지 알 수 없으므로 버튼을 다시 열지 않는다.
+      result.textContent = MSG_UNSENT;
+    }
+    entry.expired = true; // 카운트다운을 멈춘다
+    entry.timer.textContent = '';
+  }
+
+  // ---- 채팅 ----
+
   function renderSources(bot, items) {
-    if (!items.length) return;
+    if (!items?.length) return;
     const box = append(bot, 'div', 'sources');
     append(box, 'h2', '', '참고 문서');
     const list = append(box, 'ul');
-    for (const item of items) append(list, 'li', '', item.title);
+    for (const item of items) append(list, 'li', '', item.title ?? '');
   }
 
   function parseEvent(block) {
@@ -151,6 +347,7 @@
 
     // 종료 이벤트를 받아야 지워진다. 그래서 중간에 끊긴 스트림도 오류로 표시된다.
     let failure = MSG_FAILED;
+    let cards = 0;
     try {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -163,16 +360,17 @@
           const following = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
           if (event === 'meta') rememberConversation(data.conversationId);
           else if (event === 'sources') renderSources(bot, data.items);
-          else if (event === 'delta') answer.textContent += data.text;
-          else if (event === 'error') failure = data.message;
-          else if (event === 'done' && answer.textContent.trim()) failure = null;
+          else if (event === 'delta') answer.textContent += data.text ?? '';
+          else if (event === 'action') { renderCard(bot, data); cards++; }
+          else if (event === 'error') failure = data.message ?? MSG_FAILED;
+          else if (event === 'done' && (answer.textContent.trim() || cards)) failure = null;
           if (following) log.scrollTop = log.scrollHeight;
         });
       }
     } catch {
       // 종료 이벤트 뒤의 읽기 실패는 무시한다. 결과는 이미 failure에 들어 있다.
     }
-    if (!answer.textContent.trim()) bot.remove();
+    if (!answer.textContent.trim() && !cards) bot.remove();
     if (failure) {
       errorBox.textContent = failure;
       errorBox.hidden = false;
@@ -183,7 +381,7 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const message = input.value.trim();
-    if (!message || send.disabled) return;
+    if (!message || busy) return;
     input.value = '';
     errorBox.hidden = true;
     setBusy(true);
@@ -199,6 +397,109 @@
       form.requestSubmit();
     }
   });
+
+  // ---- 상태 패널 ----
+
+  function formatFacts(facts) {
+    return Object.entries(facts ?? {})
+      .map(([k, v]) => `${k} ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join(', ');
+  }
+
+  function renderStatus(s) {
+    const incidents = (s.incidents ?? []).map((i) => {
+      const li = document.createElement('li');
+      li.append(`[${i.severity}] ${i.equipmentId} ${INCIDENT[i.kind] ?? i.kind}`);
+      const b = append(li, 'button', 'ask', '물어보기');
+      b.type = 'button';
+      b.disabled = busy;
+      b.addEventListener('click', () => {
+        if (busy) return;
+        input.value = (QUESTION[i.kind] ?? (() => '지금 현장 상황 어때?'))(i.equipmentId);
+        form.requestSubmit();
+      });
+      return li;
+    });
+    $('incidents').replaceChildren(...incidents);
+    $('no-incidents').hidden = incidents.length > 0;
+
+    $('equipment').replaceChildren(...(s.equipment ?? []).map((e) => {
+      const li = document.createElement('li');
+      li.append(`${e.id} `);
+      append(li, 'strong', `state-${e.state}`, STATE[e.state] ?? e.state);
+      const facts = formatFacts(e.facts);
+      if (facts) append(li, 'span', 'note', ` · ${facts}`);
+      return li;
+    }));
+
+    const maintenance = (s.maintenance ?? []).map((m) => {
+      const li = document.createElement('li');
+      li.append(`${m.equipmentId}: `);
+      li.append(m.summary ?? ''); // 모델이 쓴 문장이다. 텍스트로만 넣는다.
+      const b = append(li, 'button', 'secondary', '완료');
+      b.type = 'button';
+      b.disabled = role !== 'OPERATOR' || closing.has(m.id);
+      b.addEventListener('click', () => closeMaintenance(m.id, b));
+      return li;
+    });
+    $('maintenance').replaceChildren(...maintenance);
+    $('no-maintenance').hidden = maintenance.length > 0;
+  }
+
+  async function closeMaintenance(id, button) {
+    if (closing.has(id)) return;
+    closing.add(id);
+    button.disabled = true;
+    const msg = $('maintenance-msg');
+    try {
+      const res = await fetch(`/api/maintenance/${encodeURIComponent(id)}/close`, { method: 'POST' });
+      msg.textContent = (await readJson(res)).message ?? (res.ok ? '완료 처리했습니다.' : '처리할 수 없습니다.');
+    } catch {
+      msg.textContent = MSG_UNSENT;
+    }
+    closing.delete(id);
+  }
+
+  // 응답이 온 뒤에만 다음 조회를 예약한다. 장애 중 응답이 주기보다 길어도 요청이 겹치지 않는다.
+  async function poll() {
+    try {
+      const res = await fetch('/api/plant/status', { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
+      if (!res.ok) throw new Error('status');
+      renderStatus(await res.json());
+      $('conn').hidden = true;
+    } catch {
+      $('conn').hidden = false;
+    } finally {
+      setTimeout(poll, POLL_MS);
+    }
+  }
+
+  // ---- 시뮬레이터 제어 ----
+
+  async function simulate(path, okText) {
+    const msg = $('sim-msg');
+    try {
+      const res = await fetch(path, { method: 'POST' });
+      msg.textContent = res.ok ? okText
+        : res.status === 409 ? '다른 시나리오가 실행 중입니다. 먼저 리셋해 주세요.'
+        : res.status === 404 ? '시뮬레이터가 꺼져 있거나 없는 시나리오입니다.'
+        : '시뮬레이터 요청이 실패했습니다.';
+    } catch {
+      msg.textContent = '시뮬레이터에 연결하지 못했습니다.';
+    }
+  }
+
+  for (const b of document.querySelectorAll('[data-scenario]')) {
+    b.addEventListener('click', () => simulate(`/sim/scenarios/${b.dataset.scenario}`, `${b.textContent} 시나리오를 시작했습니다.`));
+  }
+  $('sim-reset').addEventListener('click', () =>
+    simulate('/sim/reset', '시뮬레이터를 리셋했습니다. 열린 장애 건은 다음 감지 주기에 닫힙니다.'));
+
+  // 현재 세션을 묻는 API가 없어 선택된 계정으로 다시 로그인한다.
+  const savedAccount = load(ACCOUNT_KEY);
+  if (savedAccount && [...account.options].some((o) => o.value === savedAccount)) account.value = savedAccount;
+  login(account.value);
+  poll();
 </script>
 </body>
 </html>
