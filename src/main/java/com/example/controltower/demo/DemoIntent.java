@@ -16,7 +16,7 @@ final class DemoIntent {
     private static final Pattern ROBOT = Pattern.compile("AMR-\\d+", Pattern.CASE_INSENSITIVE);
     private static final Pattern EQUIPMENT = Pattern.compile("(?:CV|CH|SR|SC|AMR)-\\d+", Pattern.CASE_INSENSITIVE);
     private static final Pattern WHY = Pattern.compile("왜 멈|원인");
-    private static final Pattern STATUS = Pattern.compile("상황|현황");
+    private static final Pattern STATUS = Pattern.compile("상황|현황|현장");
     // 사용자 문장을 카드에 옮기지 않으려고 고정 문구를 쓴다.
     private static final String MAINTENANCE_SUMMARY = "운영자가 대화에서 정비 점검을 요청했습니다.";
 
