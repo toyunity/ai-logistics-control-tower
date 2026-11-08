@@ -6,6 +6,7 @@ import com.example.controltower.application.port.out.AssistantChunk;
 import com.example.controltower.application.port.out.ControlAssistant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.ai.chat.client.ChatClient;
@@ -34,6 +35,8 @@ public class SpringAiAssistant implements ControlAssistant {
             return chatClient.prompt()
                     .user(u -> u.text(message))
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId.toString()))
+                    // 비어 있으면 ToolContext를 받는 도구 호출이 예외로 스트림을 끊는다. 익명 대화에도 넘긴다.
+                    .toolContext(Map.of(TurnScope.KEY, scope))
                     .stream()
                     .chatClientResponse()
                     .concatMapIterable(r -> toChunks(r, retrievedSent));

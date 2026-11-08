@@ -42,7 +42,7 @@ public class ChatController {
             case ChatEvent.Meta m -> "meta";
             case ChatEvent.Sources s -> "sources";
             case ChatEvent.Delta d -> "delta";
-            case ChatEvent.Action a -> "todo";
+            case ChatEvent.Action a -> "action";
             case ChatEvent.Done d -> "done";
             case ChatEvent.Failed f -> "error";
         };
