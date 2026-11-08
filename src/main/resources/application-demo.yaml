@@ -3,4 +3,4 @@ spring.ai.model:
   embedding: none
 controltower:
   embedding-index: demo-word-bigram   # 벡터 계산 방식을 바꾸면 이 값도 바꾼다. 그래야 기존 행이 다시 임베딩된다
-  similarity-threshold: 0.18         # 실측으로 고른 값. 표현이 겹치는 무관 질문은 통과한다(README 참고)
+  similarity-threshold: 0.20         # 실측: 정답 최저 0.223, 무관 최고 0.173의 가운데. 그보다 높은 오답 둘은 못 거른다(DemoEmbeddingModelTest)
