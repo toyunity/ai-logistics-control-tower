@@ -143,6 +143,7 @@
   const KIND = { RESTART: '재가동', DIVERT: '슈트 우회', REASSIGN: '로봇 작업 재배정', MAINTENANCE: '정비 요청' };
   const RESULT = { SUCCEEDED: '성공', FAILED: '실패', UNCONFIRMED: '미확인(현장 확인 필요)', REJECTED: '거절됨' };
   const STATE = { RUNNING: '가동', STOPPED: '정지', FAULT: '고장', DEGRADED: '저하', OFFLINE: '연결 끊김', UNKNOWN: '알 수 없음' };
+  const FAULT = { DOWNSTREAM_BLOCKED: '하류 막힘', MECHANICAL: '기계 고장', UNKNOWN: '알 수 없음' };
   const INCIDENT = {
     CONVEYOR_STOPPED: '컨베이어 정지', CHUTE_FULL: '슈트 만재', SCANNER_DEGRADED: '스캐너 읽기 저하', ROBOT_BATTERY: '로봇 배터리 저하',
   };
@@ -400,10 +401,32 @@
 
   // ---- 상태 패널 ----
 
+  // PlantStatusService가 만드는 키만 풀어 쓴다. 모르는 키는 이름 그대로 보인다.
   function formatFacts(facts) {
-    return Object.entries(facts ?? {})
-      .map(([k, v]) => `${k} ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join(', ');
+    const rest = { ...facts };
+    const take = (k) => { const v = rest[k]; delete rest[k]; return v; };
+    const parts = [];
+    const fault = take('fault');
+    if (fault !== undefined && fault !== 'NONE') parts.push(`알람 원인 ${FAULT[fault] ?? fault}`);
+    const diversions = take('diversions');
+    for (const [from, to] of Object.entries(diversions ?? {})) parts.push(`우회 ${from}→${to}`);
+    if (take('blocked') === true) parts.push('차단');
+    if ('fillPercent' in rest) parts.push(`적재 ${take('fillPercent')}%`);
+    if ('ratePerMin' in rest) {
+      const cap = take('capacityPerMin');
+      parts.push(`유입 ${take('ratePerMin')}/분${cap !== undefined ? ` (용량 ${cap})` : ''}`);
+    }
+    if (take('full') === true) parts.push('만재');
+    if ('batteryPercent' in rest) parts.push(`배터리 ${take('batteryPercent')}%`);
+    if ('queuedTasks' in rest) {
+      const cap = take('queueCapacity');
+      parts.push(`작업 ${take('queuedTasks')}${cap !== undefined ? `/${cap}` : ''}`);
+    }
+    if ('failRatePercent' in rest) parts.push(`읽기 실패율 ${take('failRatePercent')}%`);
+    for (const [k, v] of Object.entries(rest)) {
+      parts.push(`${k} ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`);
+    }
+    return parts.join(' · ');
   }
 
   function renderStatus(s) {
