@@ -6,6 +6,7 @@ import com.example.controltower.application.port.out.AssistantChunk;
 import com.example.controltower.application.port.out.ControlAssistant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.ai.chat.client.ChatClient;
@@ -34,6 +35,8 @@ public class SpringAiAssistant implements ControlAssistant {
             return chatClient.prompt()
                     .user(u -> u.text(message))
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId.toString()))
+                    // 비어 있으면 ToolContext를 받는 도구 호출이 예외로 스트림을 끊는다. 익명 대화에도 넘긴다.
+                    .toolContext(Map.of(TurnScope.KEY, scope))
                     .stream()
                     .chatClientResponse()
                     .concatMapIterable(r -> toChunks(r, retrievedSent));
@@ -46,7 +49,7 @@ public class SpringAiAssistant implements ControlAssistant {
         if (retrievedSent.compareAndSet(false, true)) {
             var docs = (List<Document>) r.context().get(RetrievalAugmentationAdvisor.DOCUMENT_CONTEXT);
             chunks.add(new AssistantChunk.Retrieved(docs.stream()
-                    .map(d -> new Source(d.getId(), (String) d.getMetadata().get("question"), d.getScore()))
+                    .map(d -> new Source(d.getId(), (String) d.getMetadata().get("title"), d.getScore()))
                     .toList()));
         }
         // 버리지 않고 빈 Text로 넘긴다. 서비스의 유휴 타이머는 업스트림 청크마다 초기화되어야 한다.

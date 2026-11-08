@@ -27,6 +27,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -47,7 +49,9 @@ public final class PlantStatusService implements PlantStatus {
     private final MaintenanceDesk desk;
     private final LineTopology topology;
     private final Clock clock;
+    private final Executor reads;
 
+    /** @param reads 설비군을 동시에 읽을 실행기. 차례로 읽으면 모두 응답하지 않을 때 타임아웃이 설비군 수만큼 쌓인다. */
     public PlantStatusService(
             Conveyors conveyors,
             Sorters sorters,
@@ -56,7 +60,8 @@ public final class PlantStatusService implements PlantStatus {
             Incidents incidents,
             MaintenanceDesk desk,
             LineTopology topology,
-            Clock clock) {
+            Clock clock,
+            Executor reads) {
         this.conveyors = conveyors;
         this.sorters = sorters;
         this.fleet = fleet;
@@ -65,6 +70,7 @@ public final class PlantStatusService implements PlantStatus {
         this.desk = desk;
         this.topology = topology;
         this.clock = clock;
+        this.reads = reads;
     }
 
     /** 스캐너는 이벤트로만 상태를 알린다. 모르는 코드와 이력 없음은 UNKNOWN이다. */
@@ -79,11 +85,10 @@ public final class PlantStatusService implements PlantStatus {
 
     @Override
     public PlantSnapshot snapshot() {
-        Map<String, EquipmentView> views = new HashMap<>();
-        views.putAll(readable(this::conveyorViews));
-        views.putAll(readable(this::sorterViews));
-        views.putAll(readable(this::scannerViews));
-        views.putAll(readable(this::robotViews));
+        List<CompletableFuture<Map<String, EquipmentView>>> families = List.of(
+                async(this::conveyorViews), async(this::sorterViews), async(this::robotViews));
+        Map<String, EquipmentView> views = new HashMap<>(readable(this::scannerViews));
+        families.forEach(f -> views.putAll(f.join()));
         return new PlantSnapshot(
                 topology.all().stream().map(id -> viewOrUnknown(views, id)).toList(),
                 incidents.open(),
@@ -123,6 +128,15 @@ public final class PlantStatusService implements PlantStatus {
     public Optional<RootCauseCandidate> diagnose(String id) {
         // 하류 설비 이벤트도 근거이므로 해당 설비만 읽으면 원인을 찾을 수 없다.
         return CascadeAnalyzer.analyze(id, events.since(clock.instant().minus(DIAGNOSE_WINDOW)));
+    }
+
+    // 실행기가 거절해도 그 설비군만 UNKNOWN이 되게 한다.
+    private CompletableFuture<Map<String, EquipmentView>> async(Supplier<Map<String, EquipmentView>> family) {
+        try {
+            return CompletableFuture.supplyAsync(() -> readable(family), reads);
+        } catch (RuntimeException e) {
+            return CompletableFuture.completedFuture(Map.of());
+        }
     }
 
     /** 설비군을 호출 하나씩 격리한다. 2초마다 불리므로 장애 중 기록은 감지 쪽 경고에 맡기고 DEBUG로만 남긴다. */

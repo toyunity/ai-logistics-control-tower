@@ -7,6 +7,8 @@ import com.example.controltower.domain.EquipmentEvent;
 import com.example.controltower.domain.LineTopology;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
 public final class IngestEventService implements IngestEvent {
@@ -18,11 +20,15 @@ public final class IngestEventService implements IngestEvent {
     private final EventLog events;
     private final LineTopology topology;
     private final DetectAnomalies detection;
+    private final Executor detectionExecutor;
 
-    public IngestEventService(EventLog events, LineTopology topology, DetectAnomalies detection) {
+    /** @param detectionExecutor 감지는 게이트웨이를 읽으므로 수신 스레드에서 돌리지 않는다. 느린 설비가 수신 응답을 붙잡으면 송신 측 큐가 밀린다. */
+    public IngestEventService(
+            EventLog events, LineTopology topology, DetectAnomalies detection, Executor detectionExecutor) {
         this.events = events;
         this.topology = topology;
         this.detection = detection;
+        this.detectionExecutor = detectionExecutor;
     }
 
     @Override
@@ -34,11 +40,19 @@ public final class IngestEventService implements IngestEvent {
         if (!events.append(event)) {
             return;
         }
+        // 이벤트는 이미 저장됐으므로 감지가 밀리거나 실패해도 다음 스케줄러 주기가 다시 감지한다.
+        try {
+            detectionExecutor.execute(this::detectQuietly);
+        } catch (RejectedExecutionException e) {
+            log.log(Level.DEBUG, "anomaly detection after event ingest skipped");
+        }
+    }
+
+    // 예외 메시지에 이벤트 내용이 섞일 수 있어 고정 문구만 남긴다.
+    private void detectQuietly() {
         try {
             detection.detect();
         } catch (RuntimeException e) {
-            // 이벤트는 이미 저장됐고 다음 스케줄러 주기가 다시 감지한다.
-            // 예외 메시지에 이벤트 내용이 섞일 수 있어 고정 문구만 남긴다.
             log.log(Level.ERROR, "anomaly detection failed after event ingest");
         }
     }

@@ -2,7 +2,15 @@ package com.example.controltower;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.controltower.application.port.in.AssistantChat;
+import com.example.controltower.application.port.in.DecideCommand;
+import com.example.controltower.application.port.in.DetectAnomalies;
+import com.example.controltower.application.port.in.IngestEvent;
+import com.example.controltower.application.port.in.MaintenanceAdmin;
+import com.example.controltower.application.port.in.PlantStatus;
+import com.example.controltower.application.port.in.ProposeCommand;
 import com.example.controltower.config.ControlTowerProperties;
+import java.util.List;
 import com.example.controltower.support.FakeAiConfig;
 import com.example.controltower.support.TestInfraConfig;
 import org.junit.jupiter.api.Test;
@@ -36,5 +44,9 @@ class ContextLoadsIT {
         assertThat(anthropicDefaults.getThinking()).isNull();
         assertThat(jdbc.queryForObject("select count(*) from vector_store", Long.class)).isNotNull();
         assertThat(jdbc.queryForObject("select count(*) from spring_ai_chat_memory", Long.class)).isNotNull();
+        for (Class<?> port : List.of(AssistantChat.class, PlantStatus.class, ProposeCommand.class, DecideCommand.class,
+                IngestEvent.class, DetectAnomalies.class, MaintenanceAdmin.class)) {
+            assertThat(ctx.getBeansOfType(port)).as(port.getSimpleName()).hasSize(1);
+        }
     }
 }

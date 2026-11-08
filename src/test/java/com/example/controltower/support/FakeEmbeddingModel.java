@@ -41,7 +41,7 @@ public class FakeEmbeddingModel implements EmbeddingModel {
 
     private static float[] vector(String text) {
         float[] v = new float[DIMENSIONS];
-        v[text != null && text.contains("환불") ? 0 : 1] = 1f;
+        v[text != null && text.contains("205") ? 0 : 1] = 1f;
         return v;
     }
 }

@@ -23,18 +23,18 @@ class DemoChatModel implements ChatModel {
     private static final Logger log = LoggerFactory.getLogger(DemoChatModel.class);
 
     private static final String PREFIX = "[데모 응답 · 실제 AI 아님] ";
-    private static final String NO_FAQ_MARKER = "FAQ 근거 없음";
-    private static final String GUIDANCE = "등록된 FAQ에서 관련 내용을 찾지 못했습니다. 상담원 연결을 이용해 주세요.";
-    private static final Pattern FIRST_ANSWER = Pattern.compile("^A: (.*)$", Pattern.MULTILINE);
+    private static final String NO_DOCUMENTS_MARKER = "관련 지식 문서 없음";
+    private static final String GUIDANCE = "등록된 지식 문서에서 관련 내용을 찾지 못했습니다. 설비 상태는 화면의 상태 패널에서 확인해 주세요.";
+    private static final Pattern FIRST_BODY = Pattern.compile("^내용: (.*)$", Pattern.MULTILINE);
     private static final Pattern FOLLOW_UP = Pattern.compile("Follow-up query:\\n(.*)\\n\\nStandalone query:", Pattern.DOTALL);
     private static final Pattern CHUNK = Pattern.compile(".{1,3}", Pattern.DOTALL);
     private static final Duration CHUNK_DELAY = Duration.ofMillis(30);
 
     DemoChatModel() {
-        log.info("Demo mode on: answers are FAQ text from a stub, not AI. No external AI API is called.");
+        log.info("Demo mode on: answers are knowledge document text from a stub, not AI. No external AI API is called.");
     }
 
-    // 재작성 전용. 스텁은 문맥을 모르니 현재 질문만 돌려준다. 이력까지 넘기면 직전 답변의 FAQ 원문이 검색을 지배한다.
+    // 재작성 전용. 스텁은 문맥을 모르니 현재 질문만 돌려준다. 이력까지 넘기면 직전 답변의 문서 원문이 검색을 지배한다.
     @Override
     public ChatResponse call(Prompt prompt) {
         String text = prompt.getUserMessage().getText();
@@ -54,12 +54,12 @@ class DemoChatModel implements ChatModel {
                 .concatWith(Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage(""), finish)))));
     }
 
-    // 근거 없음 프롬프트에는 사용자 입력이 그대로 들어가므로, 입력의 <faq>에 속지 않게 이쪽을 먼저 본다.
+    // 근거 없음 프롬프트에는 사용자 입력이 그대로 들어가므로, 입력의 <documents>에 속지 않게 이쪽을 먼저 본다.
     private static String answer(String userText) {
-        if (userText.startsWith(NO_FAQ_MARKER) || !userText.contains("<faq>")) {
+        if (userText.startsWith(NO_DOCUMENTS_MARKER) || !userText.contains("<documents>")) {
             return GUIDANCE;
         }
-        var answer = FIRST_ANSWER.matcher(userText);
-        return answer.find() ? answer.group(1) : GUIDANCE;
+        var body = FIRST_BODY.matcher(userText);
+        return body.find() ? body.group(1) : GUIDANCE;
     }
 }

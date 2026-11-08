@@ -29,15 +29,20 @@ spring:
       id-type: TEXT                 # 기본값 UUID이면 "refund-policy" 같은 ID가 실패한다
       dimensions: 1536
     chat.memory.repository.jdbc.initialize-schema: always
+    chat.client.tool-calling.advisor-order: 20   # 기본값은 메모리(0)와 RAG(10) 바깥이라 도구 반복마다 검색과 재작성이 다시 돈다
+server.servlet.session.cookie.same-site: lax   # 다른 사이트에서 보낸 확정 POST에 세션 쿠키가 실리지 않게 한다
 logging.level.org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR   # WARN은 거부된 사용자 입력을 그대로 남긴다
+logging.level.org.springframework.ai.tool.method.MethodToolCallback: ERROR   # 인자 변환 실패 WARN이 모델이 보낸 인자 값을 그대로 남긴다
 controltower:
   chat-model: claude-opus-5-5
   rewrite-model: claude-opus-5-5    # 지연을 줄여야 하면 측정 후 claude-haiku-5-5로 바꾼다
   max-tokens: 8000                  # 끊긴 클라이언트의 답변 1건에 드는 비용 상한이기도 하다(README 참고)
-  embedding-index: ${spring.ai.openai.embedding.options.model}   # FAQ 해시에 포함된다. 바뀌면 전체를 다시 임베딩한다
+  embedding-index: ${spring.ai.openai.embedding.options.model}   # 지식 문서 해시에 포함된다. 바뀌면 전체를 다시 임베딩한다
   top-k: 3
   similarity-threshold: 0.4         # 측정값이 아닌 초기값. 보정 방법은 README 검증 상태 참고
   stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 시간 한도는 spring.ai.anthropic.timeout
+  cutoff: "18:00"                   # 출고 마감 시각(서버 시간대). 가상의 값이며 장애 등급 계산에 쓴다
+  detection.enabled: true           # 5초 주기 감지. 끄면 이벤트 수신 때만 감지한다
   simulator:
     enabled: true
     event-target: ""                # 비우면 실행 중인 서버 자신의 포트로 보낸다

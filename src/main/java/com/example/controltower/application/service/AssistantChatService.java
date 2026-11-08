@@ -2,6 +2,7 @@ package com.example.controltower.application.service;
 
 import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
+import com.example.controltower.application.port.in.ChatEvent.Action;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
 import com.example.controltower.application.port.in.ChatEvent.Done;
 import com.example.controltower.application.port.in.ChatEvent.Failed;
@@ -11,6 +12,8 @@ import com.example.controltower.application.port.in.TurnScope;
 import com.example.controltower.application.port.out.AssistantChunk;
 import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.domain.Actor;
+import com.example.controltower.domain.CommandSpec;
+import com.example.controltower.domain.PendingCommand;
 import java.time.Duration;
 import java.util.UUID;
 import reactor.core.publisher.Flux;
@@ -33,7 +36,9 @@ public class AssistantChatService implements AssistantChat {
     @Override
     public Flux<ChatEvent> stream(UUID conversationId, String message, Actor actor) {
         return Flux.defer(() -> {
-            Flux<ChatEvent> body = assistant.stream(conversationId, message, new TurnScope(actor, MAX_TOOL_CALLS))
+            TurnScope scope = new TurnScope(actor, MAX_TOOL_CALLS);
+            // 어댑터가 동기로 던져도 Meta 뒤 Failed로 끝나게 구독 시점까지 미룬다.
+            Flux<ChatEvent> body = Flux.defer(() -> assistant.stream(conversationId, message, scope))
                     .timeout(idleTimeout) // 청크 단위라 침묵만 제한하고 답변 길이는 제한하지 않는다
                     // 빈 청크도 타이머를 초기화해야 하므로 timeout 뒤에서 거른다.
                     // hasText로 거르면 공백 청크가 빠져 띄어쓰기가 사라진다.
@@ -41,6 +46,8 @@ public class AssistantChatService implements AssistantChat {
                     .map(AssistantChatService::toEvent);
             return Flux.<ChatEvent>just(new Meta(conversationId))
                     .concatWith(body)
+                    // 본문이 끝난 뒤에 읽어야 이번 턴 도구가 만든 카드가 모두 들어 있다.
+                    .concatWith(Flux.defer(() -> Flux.fromIterable(scope.proposed()).map(AssistantChatService::toAction)))
                     .concatWith(Flux.just(new Done())) // onErrorResume이 이보다 뒤에 있어야 실패 시 Done이 나가지 않는다
                     .onErrorResume(AssistantChatService::toFailed);
         });
@@ -51,6 +58,21 @@ public class AssistantChatService implements AssistantChat {
             case AssistantChunk.Retrieved r -> new Sources(r.sources());
             case AssistantChunk.Text t -> new Delta(t.text());
             case AssistantChunk.Refused r -> throw new RefusedException();
+        };
+    }
+
+    private static ChatEvent toAction(PendingCommand card) {
+        return new Action(card.id(), card.spec().kind().name(), card.spec().targetId(), summary(card.spec()),
+                card.impact(), card.expiresAt());
+    }
+
+    // 정비 요약만 모델이 쓴 문장이다. 카드에 표시만 하고 도구 결과로는 돌려주지 않는다.
+    private static String summary(CommandSpec spec) {
+        return switch (spec) {
+            case CommandSpec.Restart s -> s.conveyorId() + " 재가동";
+            case CommandSpec.Divert s -> s.fromChute() + " 물량을 " + s.toChute() + "로 우회";
+            case CommandSpec.Reassign s -> s.fromRobot() + " 작업을 " + s.toRobot() + "로 재배정";
+            case CommandSpec.Maintenance s -> s.summary();
         };
     }
 

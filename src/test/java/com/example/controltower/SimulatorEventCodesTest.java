@@ -23,7 +23,7 @@ class SimulatorEventCodesTest {
 
     private final PlantSimulator sim = new PlantSimulator(7L, Instant.parse("2026-11-07T00:00:00Z"));
     private final IngestEventService ingest =
-            new IngestEventService(new InMemoryEventLog(), LineTopology.DEFAULT, () -> {});
+            new IngestEventService(new InMemoryEventLog(), LineTopology.DEFAULT, () -> {}, Runnable::run);
     private final Set<String> seen = new HashSet<>();
     private Instant now = Instant.parse("2026-11-07T00:00:00Z");
 

@@ -2,7 +2,7 @@ package com.example.controltower.adapter.in.web;
 
 import com.example.controltower.application.port.in.AssistantChat;
 import com.example.controltower.application.port.in.ChatEvent;
-import com.example.controltower.domain.Actor;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -28,12 +28,13 @@ public class ChatController {
     record ChatRequest(UUID conversationId, @NotBlank @Size(max = 2000) String message) {}
 
     @PostMapping(path = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    ResponseEntity<Flux<ServerSentEvent<Object>>> stream(@Valid @RequestBody ChatRequest request) {
+    ResponseEntity<Flux<ServerSentEvent<Object>>> stream(
+            @Valid @RequestBody ChatRequest request, HttpServletRequest http) {
         UUID id = request.conversationId() != null ? request.conversationId() : UUID.randomUUID();
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header("X-Accel-Buffering", "no")
-                .body(assistantChat.stream(id, request.message(), Actor.ANONYMOUS).map(ChatController::toSse));
+                .body(assistantChat.stream(id, request.message(), SessionActor.of(http)).map(ChatController::toSse));
     }
 
     private static ServerSentEvent<Object> toSse(ChatEvent event) {
@@ -41,6 +42,7 @@ public class ChatController {
             case ChatEvent.Meta m -> "meta";
             case ChatEvent.Sources s -> "sources";
             case ChatEvent.Delta d -> "delta";
+            case ChatEvent.Action a -> "action";
             case ChatEvent.Done d -> "done";
             case ChatEvent.Failed f -> "error";
         };

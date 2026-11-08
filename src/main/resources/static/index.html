@@ -101,9 +101,9 @@
   function renderSources(bot, items) {
     if (!items.length) return;
     const box = append(bot, 'div', 'sources');
-    append(box, 'h2', '', '참고 FAQ');
+    append(box, 'h2', '', '참고 문서');
     const list = append(box, 'ul');
-    for (const item of items) append(list, 'li', '', item.question);
+    for (const item of items) append(list, 'li', '', item.title);
   }
 
   function parseEvent(block) {

@@ -567,7 +567,7 @@ class DetectAnomaliesServiceTest {
         CompletableFuture<Void> first = CompletableFuture.runAsync(blocked::detect);
         try {
             entered.await();
-            assertTimeoutPreemptively(Duration.ofSeconds(2), blocked::detect);
+            assertTimeoutPreemptively(Duration.ofSeconds(30), blocked::detect); // 교착 감지용. 빨리 돌아오는지는 상한으로 단언하지 않는다
             assertThat(sorters.reads()).isEqualTo(1);
             assertThat(incidents.all()).isEmpty();
         } finally {

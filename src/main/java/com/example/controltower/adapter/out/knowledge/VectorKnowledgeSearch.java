@@ -30,8 +30,8 @@ public class VectorKnowledgeSearch implements KnowledgeSearch {
         return docs.stream()
                 .map(d -> new KnowledgeHit(
                         d.getId(),
-                        (String) d.getMetadata().get("question"),
-                        (String) d.getMetadata().get("answer"),
+                        (String) d.getMetadata().get("title"),
+                        (String) d.getMetadata().get("body"),
                         d.getScore() == null ? 0 : d.getScore()))
                 .toList();
     }

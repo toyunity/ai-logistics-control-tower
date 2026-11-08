@@ -14,14 +14,16 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
 @Import({TestInfraConfig.class, FakeAiConfig.class})
-class FaqSyncIT {
+class KnowledgeSyncIT {
 
-    @Autowired FaqSync faqSync;
+    @Autowired KnowledgeSync sync;
     @Autowired JdbcTemplate jdbc;
     @Autowired FakeEmbeddingModel embeddings;
     @Autowired VectorStore vectorStore;
@@ -30,8 +32,8 @@ class FaqSyncIT {
 
     int before;
 
-    final FaqEntry a = new FaqEntry("a", "배송", "배송은 얼마나 걸리나요?", "2~3일 걸립니다.");
-    final FaqEntry b = new FaqEntry("b", "환불", "환불은 어떻게 하나요?", "7일 이내 가능합니다.");
+    final KnowledgeDocument a = new KnowledgeDocument("a", "알람 코드", "알람 101 하류 막힘", "하류를 먼저 확인한다.");
+    final KnowledgeDocument b = new KnowledgeDocument("b", "대응 절차", "슈트 만재 대응", "같은 그룹으로 우회한다.");
 
     @BeforeEach
     void clear() {
@@ -45,7 +47,7 @@ class FaqSyncIT {
 
     @Test
     void syncIndexesAllEntries() {
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
 
         assertThat(rows()).isEqualTo(2);
         assertThat(embeddings.embeddedTextCount() - before).isEqualTo(2);
@@ -53,45 +55,67 @@ class FaqSyncIT {
 
     @Test
     void resyncWithoutChangesEmbedsNothing() {
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
         int afterFirst = embeddings.embeddedTextCount();
 
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
 
         assertThat(embeddings.embeddedTextCount()).isEqualTo(afterFirst);
     }
 
     @Test
-    void changedAnswerReembedsOnlyThatEntry() {
-        faqSync.sync(List.of(a, b));
+    void changedBodyReembedsOnlyThatEntry() {
+        sync.sync(List.of(a, b));
         int afterFirst = embeddings.embeddedTextCount();
 
-        faqSync.sync(List.of(a, new FaqEntry("b", "환불", b.question(), "14일 이내 가능합니다.")));
+        sync.sync(List.of(a, new KnowledgeDocument("b", b.category(), b.title(), "B 그룹으로 우회한다.")));
 
         assertThat(embeddings.embeddedTextCount() - afterFirst).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select content from vector_store where id = 'b'", String.class))
-                .contains("14일");
-        assertThat(jdbc.queryForObject("select metadata->>'answer' from vector_store where id = 'b'", String.class))
-                .isEqualTo("14일 이내 가능합니다.");
+        assertThat(jdbc.queryForObject("select metadata->>'body' from vector_store where id = 'b'", String.class))
+                .isEqualTo("B 그룹으로 우회한다.");
+    }
+
+    @Test
+    void storesTitleAndBodyInDocumentFormat() {
+        sync.sync(List.of(a));
+
+        assertThat(jdbc.queryForObject("select content from vector_store where id = 'a'", String.class))
+                .isEqualTo("제목: 알람 101 하류 막힘\n내용: 하류를 먼저 확인한다.");
+        assertThat(jdbc.queryForObject("select metadata->>'title' from vector_store where id = 'a'", String.class))
+                .isEqualTo("알람 101 하류 막힘");
+    }
+
+    @Test
+    void bundledDocumentsAreValidAndCoverAlarmCodes() throws Exception {
+        List<KnowledgeDocument> docs;
+        try (var in = new ClassPathResource("knowledge/documents.json").getInputStream()) {
+            docs = jsonMapper.readValue(in, new TypeReference<List<KnowledgeDocument>>() {});
+        }
+
+        assertThat(docs).hasSizeBetween(15, 25);
+        assertThat(docs).anySatisfy(d -> assertThat(d.title()).contains("101"));
+        assertThat(docs).anySatisfy(d -> assertThat(d.title()).contains("205"));
+        sync.sync(docs);
+        assertThat(rows()).isEqualTo(docs.size());
     }
 
     @Test
     void changedEmbeddingIndexReembedsAllEntries() {
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
         int afterFirst = embeddings.embeddedTextCount();
         var otherIndex = new ControlTowerProperties(props.chatModel(), props.rewriteModel(), props.maxTokens(), props.topK(),
                 props.similarityThreshold(), props.streamIdleTimeout(), "other-index");
 
-        new FaqSync(vectorStore, jdbc, jsonMapper, otherIndex).sync(List.of(a, b));
+        new KnowledgeSync(vectorStore, jdbc, jsonMapper, otherIndex).sync(List.of(a, b));
 
         assertThat(embeddings.embeddedTextCount() - afterFirst).isEqualTo(2);
     }
 
     @Test
     void removedEntryIsDeleted() {
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
 
-        faqSync.sync(List.of(a));
+        sync.sync(List.of(a));
 
         assertThat(rows()).isEqualTo(1);
         assertThat(jdbc.queryForObject("select id from vector_store", String.class)).isEqualTo("a");
@@ -99,23 +123,23 @@ class FaqSyncIT {
 
     @Test
     void duplicateIdFailsFast() {
-        assertThatThrownBy(() -> faqSync.sync(List.of(a, a))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> sync.sync(List.of(a, a))).isInstanceOf(IllegalArgumentException.class);
         assertThat(rows()).isZero();
     }
 
     @Test
     void emptyListFailsFastAndKeepsExistingRows() {
-        faqSync.sync(List.of(a, b));
+        sync.sync(List.of(a, b));
 
-        assertThatThrownBy(() -> faqSync.sync(List.of()))
+        assertThatThrownBy(() -> sync.sync(List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("faqs.json is empty");
+                .hasMessage("documents.json is empty");
         assertThat(rows()).isEqualTo(2);
     }
 
     @Test
     void blankFieldFailsFast() {
-        assertThatThrownBy(() -> faqSync.sync(List.of(new FaqEntry("c", "배송", " ", "답"))))
+        assertThatThrownBy(() -> sync.sync(List.of(new KnowledgeDocument("c", "매뉴얼", " ", "내용"))))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(rows()).isZero();
     }

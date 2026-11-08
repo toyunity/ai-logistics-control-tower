@@ -21,39 +21,39 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(FaqController.class)
+@WebMvcTest(KnowledgeController.class)
 @Import(VectorKnowledgeSearch.class) // 문서를 응답으로 옮기는 매핑까지 함께 검증한다
 @EnableConfigurationProperties(ControlTowerProperties.class) // 슬라이스 테스트에는 @ConfigurationPropertiesScan이 적용되지 않는다
-class FaqControllerTest {
+class KnowledgeControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean VectorStore vectorStore;
 
     @Test
-    void searchMapsDocumentsToHits() throws Exception {
+    void knowledgeSearchEndpoint() throws Exception {
         Document doc = Document.builder()
-                .id("refund-policy")
-                .text("Q: 환불?\nA: 7일")
-                .metadata(Map.of("question", "환불?", "answer", "7일"))
+                .id("cv-alarm-101")
+                .text("제목: 알람 101\n내용: 하류 막힘")
+                .metadata(Map.of("title", "알람 101", "body", "하류 막힘"))
                 .score(0.87)
                 .build();
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
 
-        mvc.perform(get("/api/faqs/search").param("q", "환불"))
+        mvc.perform(get("/api/knowledge/search").param("q", "알람 101"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value("refund-policy"))
-                .andExpect(jsonPath("$[0].question").value("환불?"))
-                .andExpect(jsonPath("$[0].answer").value("7일"))
+                .andExpect(jsonPath("$[0].id").value("cv-alarm-101"))
+                .andExpect(jsonPath("$[0].title").value("알람 101"))
+                .andExpect(jsonPath("$[0].body").value("하류 막힘"))
                 .andExpect(jsonPath("$[0].score").value(0.87));
     }
 
     @Test
     void blankQueryReturns400() throws Exception {
-        mvc.perform(get("/api/faqs/search").param("q", " ")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/knowledge/search").param("q", " ")).andExpect(status().isBadRequest());
     }
 
     @Test
     void tooLongQueryReturns400() throws Exception {
-        mvc.perform(get("/api/faqs/search").param("q", "a".repeat(501))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/knowledge/search").param("q", "a".repeat(501))).andExpect(status().isBadRequest());
     }
 }
