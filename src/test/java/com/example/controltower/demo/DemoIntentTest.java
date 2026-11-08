@@ -27,6 +27,7 @@ class DemoIntentTest {
     void situationAsksPlantStatus() {
         assertThat(DemoIntent.detect("지금 라인 상황 알려줘")).contains(new ToolRequest("getPlantStatus", "{}"));
         assertThat(DemoIntent.detect("설비 현황")).contains(new ToolRequest("getPlantStatus", "{}"));
+        assertThat(DemoIntent.detect("지금 현장 어때?")).contains(new ToolRequest("getPlantStatus", "{}"));
     }
 
     @Test
