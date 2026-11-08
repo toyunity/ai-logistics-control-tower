@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -35,6 +36,8 @@ import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Import;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
@@ -43,6 +46,7 @@ import reactor.core.scheduler.Schedulers;
 @SpringBootTest
 @Import({TestInfraConfig.class, FakeAiConfig.class})
 @Timeout(30)
+@ExtendWith(OutputCaptureExtension.class)
 class ToolLoopTest {
 
     @Autowired FakeChatModel model;
@@ -67,7 +71,7 @@ class ToolLoopTest {
                 memory,
                 store,
                 props,
-                MethodToolCallbackProvider.builder().toolObjects(ping).build());
+                MethodToolCallbackProvider.builder().toolObjects(ping, new CountTool()).build());
     }
 
     // 실제 SDK처럼 논블로킹 스레드에서 내보낸다. 도구 스레드 단언은 이것 없이도 통과하므로 이 설정을 보호하지는 않는다.
@@ -153,6 +157,31 @@ class ToolLoopTest {
         assertThat(second).last().isEqualTo(new Done());
         assertThat(ping.calls).hasValue(1);
         assertThat(model.callCount()).isEqualTo(1);
+    }
+
+    // 인자 변환 실패는 도구 메서드에 오기 전에 나므로 운영 조립(자동 구성된 ToolCallingManager)으로 확인한다.
+    @Test
+    void malformedToolArgument_fixedResultNoEchoNoLog(CapturedOutput output) {
+        String marker = "MALFORMED-ARG-MARKER";
+        model.enqueueStream(Flux.just(toolCall("call-1", "count", "{\"n\":\"" + marker + "\"}")));
+        model.enqueueStream(Flux.just(text("끝"), finish("end_turn")));
+
+        List<ChatEvent> events = run("세어 줘");
+
+        assertThat(events).last().isEqualTo(new Done());
+        ToolResponseMessage response = (ToolResponseMessage) model.prompts().get(1).getInstructions().getLast();
+        assertThat(response.getResponses()).singleElement().satisfies(r -> {
+            assertThat(r.responseData()).contains("INVALID_ARGUMENT").doesNotContain(marker);
+        });
+        assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
+    }
+
+    static class CountTool {
+
+        @Tool(description = "개수 확인")
+        String count(Integer n, ToolContext ctx) {
+            return "ok";
+        }
     }
 
     static class PingTool {

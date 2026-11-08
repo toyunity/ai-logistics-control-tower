@@ -1,6 +1,7 @@
 package com.example.controltower.adapter.in.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.execution.ToolExecutionException;
 
 class PlantToolsTest {
 
@@ -99,6 +101,9 @@ class PlantToolsTest {
             assertThat(callJson("proposeRestart", args)).as(args).contains("\"status\":\"NOT_FOUND\"");
         }
         assertThat(callJson("proposeMaintenance", "{\"equipmentId\":\"CV-3\"}")).contains("\"status\":\"OK\"");
+        // 문자열이 아닌 값은 Spring AI가 변환하다 ToolExecutionException을 낸다. 고정 결과로 바꾸는 일은 ServiceConfig가 한다.
+        assertThatThrownBy(() -> callJson("proposeRestart", "{\"conveyorId\":{\"x\":1}}"))
+                .isInstanceOf(ToolExecutionException.class);
         assertThat(proposedSpecs).containsExactly(new CommandSpec.Maintenance("CV-3", ""));
     }
 
