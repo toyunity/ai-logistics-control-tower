@@ -9,11 +9,13 @@ import com.example.controltower.application.port.in.IngestEvent;
 import com.example.controltower.application.port.in.MaintenanceAdmin;
 import com.example.controltower.application.port.in.PlantStatus;
 import com.example.controltower.application.port.in.ProposeCommand;
+import com.example.controltower.application.port.in.SearchKnowledge;
 import com.example.controltower.application.port.out.CommandAudit;
 import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.application.port.out.Conveyors;
 import com.example.controltower.application.port.out.EventLog;
 import com.example.controltower.application.port.out.Incidents;
+import com.example.controltower.application.port.out.KnowledgeSearch;
 import com.example.controltower.application.port.out.MaintenanceDesk;
 import com.example.controltower.application.port.out.PendingCommands;
 import com.example.controltower.application.port.out.RobotFleet;
@@ -27,6 +29,7 @@ import com.example.controltower.application.service.IngestEventService;
 import com.example.controltower.application.service.MaintenanceAdminService;
 import com.example.controltower.application.service.PlantStatusService;
 import com.example.controltower.application.service.ProposeCommandService;
+import com.example.controltower.application.service.SearchKnowledgeService;
 import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.SafetyLimits;
 import com.example.controltower.domain.SafetyPolicy;
@@ -163,6 +166,11 @@ public class ServiceConfig {
         public void close() {
             pool.shutdownNow();
         }
+    }
+
+    @Bean
+    SearchKnowledge searchKnowledge(KnowledgeSearch knowledge) {
+        return new SearchKnowledgeService(knowledge);
     }
 
     @Bean
