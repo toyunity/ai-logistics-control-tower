@@ -1,7 +1,12 @@
 package com.example.controltower;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 
+import com.example.controltower.application.port.in.ProposeCommand;
 import com.example.controltower.support.TestInfraConfig;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -18,12 +23,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.StreamSupport;
 import com.google.genai.Client;
 import com.google.genai.types.HttpOptions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.google.genai.embedding.GoogleGenAiEmbeddingConnectionDetails;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -33,6 +40,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -202,6 +210,8 @@ class RealBeansStubIT {
             """;
 
     @LocalServerPort int port;
+    @MockitoSpyBean ProposeCommand propose;
+    @MockitoSpyBean ChatMemory chatMemory;
 
     @Test
     void documentEmbeddingsCarryOnlyTitleAndBody() {
@@ -238,6 +248,17 @@ class RealBeansStubIT {
                 .build();
         post(http, "http://localhost:" + port + "/api/session", "{\"accountId\":\"operator\"}");
         MESSAGES.clear();
+        // 컨트롤러의 subscribeOn은 구독과 요청만 옮긴다. 도구 실행과 메모리 저장은 SDK가 청크를 내보내는 스레드에서 돈다.
+        AtomicReference<String> toolThread = new AtomicReference<>();
+        AtomicReference<String> memoryThread = new AtomicReference<>();
+        doAnswer(inv -> {
+            toolThread.set(Thread.currentThread().getName());
+            return inv.callRealMethod();
+        }).when(propose).propose(any(), any());
+        doAnswer(inv -> {
+            memoryThread.set(Thread.currentThread().getName());
+            return inv.callRealMethod();
+        }).when(chatMemory).add(anyString(), anyList());
         int embeddingsBefore = EMBEDDINGS.size();
 
         String sse = post(http, "http://localhost:" + port + "/api/chat/stream", "{\"message\":\"" + TOOL_MARKER + "\"}");
@@ -270,6 +291,9 @@ class RealBeansStubIT {
         for (Captured request : MESSAGES) {
             assertThat(request.body()).doesNotContain("operator").doesNotContain("turnScope");
             assertNoForbiddenOptions(JSON.readTree(request.body()));
+        }
+        for (String thread : List.of(toolThread.get(), memoryThread.get())) {
+            assertThat(thread).doesNotStartWith("webflux-http-").doesNotStartWith("reactor-http-");
         }
     }
 
