@@ -32,6 +32,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import reactor.core.scheduler.Schedulers;
+import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.context.ApplicationContext;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /** 실제 HTTP 위에서 MCP SDK 클라이언트로 붙는다. 조회 도구 네 개만 보이고, 결과는 채팅 도구와 같은 고정 형식이다. */
 @SpringBootTest(
@@ -50,6 +53,7 @@ class McpServerIT {
     private static final String UNAUTHORIZED = "{\"status\":\"UNAUTHORIZED\",\"message\":\"MCP 토큰이 필요합니다.\"}";
 
     @LocalServerPort int port;
+    @Autowired ApplicationContext ctx;
 
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -72,6 +76,12 @@ class McpServerIT {
 
     private static String text(McpSchema.CallToolResult result) {
         return ((McpSchema.TextContent) result.content().getFirst()).text();
+    }
+
+    // 토큰 검사는 스타터의 라우터 빈 이름을 같은 이름으로 덮어써서 붙인다. 스타터가 이름을 바꾸면 검사 없는 라우터가 함께 생기므로 여기서 잡는다.
+    @Test
+    void theGuardedRouterIsTheOnlyRouter() {
+        assertThat(ctx.getBeansOfType(RouterFunction.class)).containsOnlyKeys("webFluxStreamableServerRouterFunction");
     }
 
     @Test

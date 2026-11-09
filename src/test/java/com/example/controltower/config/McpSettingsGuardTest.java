@@ -17,7 +17,7 @@ class McpSettingsGuardTest {
         "false, false, -,          true",
         "-,     false, -,          true",
         "true,  true,  STREAMABLE, true",
-        "true,  true,  -,          true",
+        "true,  true,  -,          false",
         "false, true,  -,          false",
         "-,     -,     -,          false",
         "true,  true,  SSE,        false",
