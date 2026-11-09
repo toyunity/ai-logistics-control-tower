@@ -7,7 +7,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.controltower.application.port.in.ChatEvent;
 import com.example.controltower.application.port.in.ChatEvent.Delta;
+import com.example.controltower.application.port.in.ChatEvent.Action;
 import com.example.controltower.application.port.in.ChatEvent.Done;
+import com.example.controltower.application.port.in.ChatEvent.Failed;
 import com.example.controltower.application.port.in.TurnScope;
 import com.example.controltower.application.service.AssistantChatService;
 import com.example.controltower.config.ControlTowerProperties;
@@ -31,10 +33,12 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -56,6 +60,7 @@ class ToolLoopTest {
     @Autowired ControlTowerProperties props;
     // 자동 구성 빌더를 써야 운영 설정(tool-calling.advisor-order)이 적용된 경로를 확인한다.
     @Autowired ChatClient.Builder main;
+    @Autowired @Qualifier("plantTools") ToolCallbackProvider plantTools;
 
     private final PingTool ping = new PingTool();
     private UUID id;
@@ -174,6 +179,23 @@ class ToolLoopTest {
             assertThat(r.responseData()).contains("INVALID_ARGUMENT").doesNotContain(marker);
         });
         assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
+    }
+
+    // 한도를 넘긴 도구 호출도 모델 호출을 한 번씩 더 부른다. 17번째 호출에서 스트림을 끊어 과금되는 호출 수를 묶는다.
+    @Test
+    void modelCallingToolsForever_endsWithErrorAfterSixteenCalls() {
+        for (int i = 1; i <= 40; i++) {
+            model.enqueueStream(Flux.just(toolCall("call-" + i, "getEquipment", "{\"id\":\"NO-SUCH\"}")));
+        }
+        client = new AssistantConfig().assistantChatClient(
+                main, ChatClient.builder(model), memory, store, props, plantTools);
+
+        List<ChatEvent> events = run("계속 확인해");
+
+        // prompts()에는 재작성용 call()도 들어 있어 스트림 호출만 센다.
+        assertThat(model.prompts().size() - model.callCount()).isEqualTo(17);
+        assertThat(events).last().isInstanceOf(Failed.class);
+        assertThat(events).noneMatch(e -> e instanceof Done || e instanceof Action);
     }
 
     static class CountTool {
