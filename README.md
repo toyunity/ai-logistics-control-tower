@@ -6,7 +6,7 @@
 
 물류 현장의 컨베이어, 분류기, 회수 로봇을 대화로 살피는 관제 어시스턴트입니다. 현장 상태를 묻고, 멈춘 원인을 추적하고, 조치를 요청하면 AI가 **확인 카드**를 만듭니다. 명령은 담당자가 카드에서 확정했을 때만, 안전 규칙을 다시 통과한 경우에만 설비로 나갑니다.
 
-Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었습니다. 답변은 Claude, 임베딩은 OpenAI, 저장은 PostgreSQL(pgvector)을 씁니다. **API 키 없이 아래 장면을 모두 재현할 수 있는 데모 모드**가 있습니다. 실제 Claude·OpenAI 호출은 아직 해 보지 못했습니다([검증 상태](#검증-상태)).
+Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었습니다. 답변은 Claude, 임베딩은 Gemini(`gemini-embedding-001`), 저장은 PostgreSQL(pgvector)을 씁니다. **API 키 없이 아래 장면을 모두 재현할 수 있는 데모 모드**가 있습니다. 실제 Claude·Gemini 호출은 아직 해 보지 못했습니다([검증 상태](#검증-상태)).
 
 ## 장면
 
@@ -167,14 +167,21 @@ POST이므로 브라우저에서는 `EventSource`가 아니라 `fetch`와 stream
 
 ## 실제 API로 실행
 
-API 키 2개(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)가 필요합니다.
+API 키 2개(`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`)가 필요합니다. Anthropic은 임베딩 API를 제공하지 않아 임베딩은 Gemini가 맡습니다.
+
+키는 파일에 쓰지 말고 셸에서 화면에 보이지 않게 입력합니다(zsh 기준).
+
+```bash
+read -rs "ANTHROPIC_API_KEY?Anthropic API key: " && echo && export ANTHROPIC_API_KEY
+read -rs "GEMINI_API_KEY?Gemini API key: " && echo && export GEMINI_API_KEY
+```
 
 ```bash
 docker compose up -d
-ANTHROPIC_API_KEY=... OPENAI_API_KEY=... ./gradlew bootRun
+./gradlew bootRun
 ```
 
-키 환경 변수가 없으면 기동이 `Could not resolve placeholder 'ANTHROPIC_API_KEY'`(또는 `'OPENAI_API_KEY'`)로 실패합니다(`ApiKeyGuardTest`). 값이 있는지만 확인하므로 틀린 키는 잡지 못합니다. DB 접속 정보는 `DB_URL`, `DB_USER`, `DB_PASSWORD`로 바꿀 수 있고 기본값은 `compose.yaml`과 같습니다.
+키 환경 변수가 없으면 기동이 `Could not resolve placeholder 'ANTHROPIC_API_KEY'`(또는 `'GEMINI_API_KEY'`)로 실패합니다(`ApiKeyGuardTest`). 값이 있는지만 확인하므로 틀린 키는 잡지 못합니다. DB 접속 정보는 `DB_URL`, `DB_USER`, `DB_PASSWORD`로 바꿀 수 있고 기본값은 `compose.yaml`과 같습니다.
 
 ## 테스트
 
@@ -188,7 +195,7 @@ Docker가 필요하고 비용은 들지 않습니다. `*IT`는 Docker가 없으�
 
 `src/main/resources/knowledge/documents.json`(22건, 전부 가상)을 고친 뒤 재시작합니다. 바뀐 문서만 다시 임베딩하고 사라진 문서는 지웁니다. 빈 배열(`[]`)이면 기존 데이터를 지우지 않고 기동이 실패합니다.
 
-임베딩 모델을 바꾸면 해시에 들어가는 `controltower.embedding-index`가 바뀌어 전체를 다시 임베딩합니다. 벡터 차원이 달라질 때만 `spring.ai.vectorstore.pgvector.dimensions`를 바꾸고 테이블을 지운 뒤 재시작합니다.
+임베딩 모델을 바꾸면 해시에 들어가는 `controltower.embedding-index`가 바뀌어 전체를 다시 임베딩합니다. 벡터 차원을 바꿀 때는 `spring.ai.vectorstore.pgvector.dimensions`와 `spring.ai.google.genai.embedding.text.options.dimensions`를 같은 값으로 바꾸고 테이블을 지운 뒤 재시작합니다. OpenAI 임베딩을 쓰던 이전 버전의 DB도 차원이 같아 테이블을 지울 필요는 없고, 첫 기동 때 전체를 다시 임베딩합니다.
 
 ```bash
 docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
@@ -213,7 +220,7 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 
 ## 검증 상태
 
-**실제 Claude·OpenAI 호출, 실제 모델의 도구 선택, 임계값 보정은 실행하지 못했습니다.** 작성 시점에 API 키가 없었습니다. 아래는 구분해서 적습니다.
+**실제 Claude·Gemini 호출, 실제 모델의 도구 선택, 임계값 보정은 실행하지 못했습니다.** 작성 시점에 API 키가 없었습니다. 아래는 구분해서 적습니다.
 
 - **실행으로 확인:** 전체 자동 테스트(가짜 모델, 로컬 스텁, 시뮬레이터, PostgreSQL 컨테이너). 데모 모드의 다섯 장면. 헤드리스 Chrome으로 본 화면 동작(확정 더블 클릭 시 요청 1건, 만료 카드 버튼 비활성, 상태가 바뀐 카드 409 문구, 연결 끊김 표시, 폭 360px에서 가로 스크롤 없음).
 - **확인하지 못함:** 실제 API가 `claude-opus-5-5`와 effort `low` 옵션, 도구 정의를 받아 주는지. 실제 모델이 상황에 맞는 도구를 고르고 프롬프트를 지키는지. 실제 임베딩의 검색 품질과 임계값 `0.4`(측정값이 아닌 초기값).
@@ -221,7 +228,7 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 다음 명령으로 확인합니다. 소액의 비용이 발생합니다.
 
 ```bash
-ANTHROPIC_API_KEY=... OPENAI_API_KEY=... ./gradlew test --tests '*LiveApiIT' --rerun -i
+./gradlew test --tests '*LiveApiIT' --rerun -i   # 위의 read 명령으로 두 키를 넣은 셸에서
 ```
 
 `--rerun`을 빼면 안 됩니다. Gradle은 환경 변수 변화를 입력으로 보지 않아, 키 없이 건너뛴 직후에는 테스트를 실행하지 않고 `BUILD SUCCESSFUL`을 출력합니다. 끝난 뒤 `build/test-results/test/TEST-com.example.controltower.LiveApiIT.xml`에서 `tests="6"`, `skipped="0"`, `failures="0"`을 확인하세요. 여기에는 슈트 만재 상황을 열린 질문으로 물었을 때 실제 모델이 우회 카드를 고르는지, 작업자 진입 중 인젝션 문장에 실행했다고 답하지 않고 아무것도 전송되지 않는지가 들어 있습니다.

@@ -11,5 +11,5 @@ public class ApiKeyGuard {
 
     ApiKeyGuard(
             @Value("${spring.ai.anthropic.api-key}") String anthropicKey,
-            @Value("${spring.ai.openai.api-key}") String openAiKey) {}
+            @Value("${spring.ai.google.genai.embedding.api-key}") String geminiKey) {}
 }

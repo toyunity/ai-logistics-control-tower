@@ -13,21 +13,23 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse.BodyHandlers;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.stream.StreamSupport;
+import com.google.genai.Client;
+import com.google.genai.types.HttpOptions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.ai.google.genai.embedding.GoogleGenAiEmbeddingConnectionDetails;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -35,7 +37,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
-@Import(TestInfraConfig.class)
+@Import({TestInfraConfig.class, RealBeansStubIT.GeminiAtStub.class})
 @Timeout(60)
 class RealBeansStubIT {
 
@@ -54,9 +56,22 @@ class RealBeansStubIT {
         stub.start();
         String url = "http://127.0.0.1:" + stub.getAddress().getPort();
         r.add("spring.ai.anthropic.base-url", () -> url);
-        r.add("spring.ai.openai.base-url", () -> url);
         r.add("spring.ai.anthropic.api-key", () -> "test");
-        r.add("spring.ai.openai.api-key", () -> "test");
+        r.add("spring.ai.google.genai.embedding.api-key", () -> "test");
+    }
+
+    // Gemini SDK는 주소를 바꾸는 설정 키가 없어, 연결 정보 빈을 스텁 주소를 쓰는 실제 클라이언트로 바꾼다.
+    @TestConfiguration
+    static class GeminiAtStub {
+        @Bean
+        GoogleGenAiEmbeddingConnectionDetails stubConnection() {
+            String url = "http://127.0.0.1:" + stub.getAddress().getPort();
+            Client client = Client.builder()
+                    .apiKey("test")
+                    .httpOptions(HttpOptions.builder().baseUrl(url).build())
+                    .build();
+            return GoogleGenAiEmbeddingConnectionDetails.builder().apiKey("test").genAiClient(client).build();
+        }
     }
 
     @AfterAll
@@ -66,9 +81,9 @@ class RealBeansStubIT {
 
     private static void handle(HttpExchange x) throws IOException {
         var captured = new Captured(x.getRequestHeaders(), new String(x.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-        if (x.getRequestURI().getPath().contains("embeddings")) {
+        if (x.getRequestURI().getPath().contains("mbedContents")) {
             EMBEDDINGS.add(captured);
-            respond(x, "application/json", embeddingResponse(JSON.readTree(captured.body()).get("input").size()));
+            respond(x, "application/json", embeddingResponse(JSON.readTree(captured.body()).get("requests").size()));
         } else {
             MESSAGES.add(captured);
             String body = captured.body();
@@ -86,14 +101,12 @@ class RealBeansStubIT {
     }
 
     private static String embeddingResponse(int count) {
-        ByteBuffer vector = ByteBuffer.allocate(1536 * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN).putFloat(1f);
-        String base64 = Base64.getEncoder().encodeToString(vector.array());
-        List<String> data = new ArrayList<>();
+        String values = "[1.0" + ",0.0".repeat(1535) + "]";
+        List<String> embeddings = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            data.add("{\"object\":\"embedding\",\"index\":%d,\"embedding\":\"%s\"}".formatted(i, base64));
+            embeddings.add("{\"values\":" + values + "}");
         }
-        return "{\"object\":\"list\",\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1},\"data\":["
-                + String.join(",", data) + "]}";
+        return "{\"embeddings\":[" + String.join(",", embeddings) + "]}";
     }
 
     private static final String THINKING_THEN_WHITESPACE_DELTA = """
@@ -192,9 +205,13 @@ class RealBeansStubIT {
 
     @Test
     void documentEmbeddingsCarryOnlyTitleAndBody() {
-        JsonNode input = JSON.readTree(EMBEDDINGS.getFirst().body()).get("input");
-        assertThat(input.get(0).asString()).contains("제목: 가상 라인 구성 개요\n내용: 이 라인은 시뮬레이터 전용 가상 현장이다.");
-        assertThat(input.toString()).doesNotContain("hash:", "category:");
+        JsonNode request = JSON.readTree(EMBEDDINGS.getFirst().body()).get("requests").get(0);
+        assertThat(request.at("/content/parts/0/text").asString())
+                .contains("제목: 가상 라인 구성 개요\n내용: 이 라인은 시뮬레이터 전용 가상 현장이다.");
+        assertThat(request.get("model").asString()).endsWith("gemini-embedding-001");
+        assertThat(request.get("outputDimensionality").asInt()).isEqualTo(1536);
+        assertThat(EMBEDDINGS.toString()).doesNotContain("hash:", "category:");
+        assertThat(EMBEDDINGS.getFirst().headers().getFirst("x-goog-api-key")).isEqualTo("test");
     }
 
     private static String post(HttpClient http, String url, String json) throws Exception {

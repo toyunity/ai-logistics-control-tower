@@ -34,7 +34,7 @@ class ContextLoadsIT {
     void contextLoads() {
         assertThat(ctx.getBean(ControlTowerProperties.class).chatModel()).isEqualTo("claude-opus-5-5");
         assertThat(ctx.getBeansOfType(org.springframework.ai.anthropic.AnthropicChatModel.class)).hasSize(1);
-        assertThat(ctx.getBeansOfType(org.springframework.ai.openai.OpenAiChatModel.class)).isEmpty();
+        assertThat(ctx.getBeansOfType(org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel.class)).hasSize(1);
         assertThat(ctx.getBean(VectorStore.class)).isInstanceOf(PgVectorStore.class);
         assertThat(ctx.getBean(ChatMemory.class)).isNotNull();
         var anthropicDefaults = ctx.getBean(org.springframework.ai.anthropic.AnthropicChatModel.class).getOptions();

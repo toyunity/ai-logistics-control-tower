@@ -37,7 +37,7 @@ import org.springframework.context.annotation.Import;
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "controltower.simulator.enabled=true")
 @Import(TestInfraConfig.class)
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "GEMINI_API_KEY", matches = ".+")
 @Timeout(180)
 class LiveApiIT {
 

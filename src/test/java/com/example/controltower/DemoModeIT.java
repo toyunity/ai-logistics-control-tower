@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.ai.anthropic.AnthropicChatModel;
-import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
@@ -70,7 +70,7 @@ class DemoModeIT {
     private static final AtomicInteger EXTERNAL_REQUESTS = new AtomicInteger();
     private static HttpServer stub;
 
-    // Claude, OpenAI 주소를 기록용 스텁으로 돌려, 데모가 이 둘을 호출하면 카운트에 잡히게 한다.
+    // Claude 주소를 기록용 스텁으로 돌려, 데모가 호출하면 카운트에 잡히게 한다. Gemini는 주소 설정이 없어 빈이 없음을 따로 본다.
     @DynamicPropertySource
     static void pointAiClientsAtStub(DynamicPropertyRegistry r) throws IOException {
         stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -82,7 +82,6 @@ class DemoModeIT {
         stub.start();
         String url = "http://127.0.0.1:" + stub.getAddress().getPort();
         r.add("spring.ai.anthropic.base-url", () -> url);
-        r.add("spring.ai.openai.base-url", () -> url);
     }
 
     @AfterAll
@@ -119,7 +118,7 @@ class DemoModeIT {
         assertThat(((ConfigurableEnvironment) ctx.getEnvironment()).getPropertySources().stream())
                 .noneMatch(source -> source.getName().contains("application.properties"));
         assertThat(ctx.getBeansOfType(AnthropicChatModel.class)).isEmpty();
-        assertThat(ctx.getBeansOfType(OpenAiEmbeddingModel.class)).isEmpty();
+        assertThat(ctx.getBeansOfType(GoogleGenAiTextEmbeddingModel.class)).isEmpty();
         assertThat(ctx.getBeansOfType(ApiKeyGuard.class)).isEmpty();
     }
 
