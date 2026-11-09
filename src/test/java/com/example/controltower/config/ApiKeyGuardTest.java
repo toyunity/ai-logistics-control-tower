@@ -33,6 +33,14 @@ class ApiKeyGuardTest {
     }
 
     @Test
+    void localProfileNeedsOnlyTheGeminiKey() {
+        runner.withPropertyValues("spring.profiles.active=local", "GEMINI_API_KEY=x")
+                .run(ctx -> assertThat(ctx).hasNotFailed());
+        runner.withPropertyValues("spring.profiles.active=local").run(ctx -> assertThat(ctx).getFailure()
+                .rootCause().hasMessageContaining("Could not resolve placeholder 'GEMINI_API_KEY'"));
+    }
+
+    @Test
     void presentKeysStart() {
         runner.withPropertyValues("ANTHROPIC_API_KEY=x", "GEMINI_API_KEY=x")
                 .run(ctx -> assertThat(ctx).hasNotFailed());

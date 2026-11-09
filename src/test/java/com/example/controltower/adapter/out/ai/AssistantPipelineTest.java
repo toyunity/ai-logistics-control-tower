@@ -95,7 +95,8 @@ class AssistantPipelineTest {
                 props,
                 MethodToolCallbackProvider.builder()
                         .toolObjects(new PlantTools(mock(PlantStatus.class), this::propose))
-                        .build());
+                        .build(),
+                model);
         return new AssistantChatService(new SpringAiAssistant(client), idleTimeout);
     }
 

@@ -1,0 +1,9 @@
+# 답변은 로컬 Ollama, 임베딩은 Gemini. Claude 키 없이 실제 모델로 돌려 볼 때 쓴다.
+spring.ai:
+  model.chat: ollama
+  ollama:
+    base-url: ${OLLAMA_URL:http://localhost:11434}
+    chat.options.model: qwen2.5:7b
+controltower:
+  chat-model: qwen2.5:7b            # 도구 호출을 지원하는 모델이어야 한다
+  rewrite-model: qwen2.5:7b

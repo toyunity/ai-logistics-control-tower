@@ -78,7 +78,8 @@ class ToolLoopTest {
                 memory,
                 store,
                 props,
-                MethodToolCallbackProvider.builder().toolObjects(ping, new CountTool()).build());
+                MethodToolCallbackProvider.builder().toolObjects(ping, new CountTool()).build(),
+                model);
     }
 
     // 실제 SDK처럼 논블로킹 스레드에서 내보낸다. 도구 스레드 단언은 이것 없이도 통과하므로 이 설정을 보호하지는 않는다.
@@ -192,7 +193,7 @@ class ToolLoopTest {
         }
         // setUp이 쓴 빌더에 다시 조립하면 advisor가 두 벌 붙는다. 새 빌더를 받는다.
         client = new AssistantConfig().assistantChatClient(
-                builders.getObject(), ChatClient.builder(model), memory, store, props, plantTools);
+                builders.getObject(), ChatClient.builder(model), memory, store, props, plantTools, model);
 
         List<ChatEvent> events = run("계속 확인해");
 
@@ -214,7 +215,7 @@ class ToolLoopTest {
         // 세지 않으면 이 응답까지 와서 Done으로 끝난다. 멈추지 않는 대신 단언으로 실패하게 둔다.
         model.enqueueStream(Flux.just(text("끝"), finish("end_turn")));
         client = new AssistantConfig().assistantChatClient(
-                builders.getObject(), ChatClient.builder(model), memory, store, props, plantTools);
+                builders.getObject(), ChatClient.builder(model), memory, store, props, plantTools, model);
 
         List<ChatEvent> events = run("계속 확인해");
 

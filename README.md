@@ -6,7 +6,7 @@
 
 물류 현장의 컨베이어, 분류기, 회수 로봇을 대화로 살피는 관제 어시스턴트입니다. 현장 상태를 묻고, 멈춘 원인을 추적하고, 조치를 요청하면 AI가 **확인 카드**를 만듭니다. 명령은 담당자가 카드에서 확정했을 때만, 안전 규칙을 다시 통과한 경우에만 설비로 나갑니다.
 
-Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었습니다. 답변은 Claude, 임베딩은 Gemini(`gemini-embedding-001`), 저장은 PostgreSQL(pgvector)을 씁니다. **API 키 없이 아래 장면을 모두 재현할 수 있는 데모 모드**가 있습니다. 실제 Claude·Gemini 호출은 아직 해 보지 못했습니다([검증 상태](#검증-상태)).
+Java 25, Spring Boot 4.1.2, Spring AI 2.0.2로 만들었습니다. 답변은 Claude, 임베딩은 Gemini(`gemini-embedding-001`), 저장은 PostgreSQL(pgvector)을 씁니다. **API 키 없이 아래 장면을 모두 재현할 수 있는 데모 모드**가 있습니다. 실제 모델 검증은 로컬 Ollama와 실제 Gemini로 했고, Claude 호출은 아직 하지 못했습니다([검증 상태](#검증-상태)).
 
 ## 장면
 
@@ -181,6 +181,19 @@ docker compose up -d
 ./gradlew bootRun
 ```
 
+### Claude 키 없이: 로컬 모델(`local` 프로필)
+
+답변을 내 컴퓨터의 [Ollama](https://ollama.com) 모델로 바꾸면 Claude 키 없이 실제 언어 모델로 돌려 볼 수 있습니다. 임베딩은 Gemini를 그대로 써서 Gemini 키 하나만 필요합니다. 도구 실행, 안전 규칙, 확정 흐름은 같은 코드입니다.
+
+```bash
+brew install ollama && brew services start ollama
+ollama pull qwen2.5:7b            # 도구 호출을 지원하는 모델, 약 4.7GB
+read -rs "GEMINI_API_KEY?Gemini API key: " && echo && export GEMINI_API_KEY
+./gradlew bootRun --args='--spring.profiles.active=local'
+```
+
+로컬 모델은 Claude보다 느리고 판단도 다를 수 있습니다. Claude 자체의 동작을 확인하려면 위의 실제 API 실행이 필요합니다.
+
 키 환경 변수가 없으면 기동이 `Could not resolve placeholder 'ANTHROPIC_API_KEY'`(또는 `'GEMINI_API_KEY'`)로 실패합니다(`ApiKeyGuardTest`). 값이 있는지만 확인하므로 틀린 키는 잡지 못합니다. DB 접속 정보는 `DB_URL`, `DB_USER`, `DB_PASSWORD`로 바꿀 수 있고 기본값은 `compose.yaml`과 같습니다.
 
 ## 테스트
@@ -189,7 +202,7 @@ docker compose up -d
 ./gradlew test
 ```
 
-Docker가 필요하고 비용은 들지 않습니다. `*IT`는 Docker가 없으면 건너뛰지 않고 실패합니다. 가짜 모델, 로컬 HTTP 스텁, 시뮬레이터를 씁니다. `LiveApiIT`만 키 2개가 모두 있을 때 실제 API를 호출하므로, 키가 있는 셸에서 `./gradlew test`를 돌리면 비용이 납니다.
+Docker가 필요하고 비용은 들지 않습니다. `*IT`는 Docker가 없으면 건너뛰지 않고 실패합니다. 가짜 모델, 로컬 HTTP 스텁, 시뮬레이터를 씁니다. 실제 모델로 도는 검사는 두 가지입니다. `LiveApiIT`는 키 2개가 모두 있을 때 실제 Claude와 Gemini를 호출하므로, 키가 있는 셸에서 `./gradlew test`를 돌리면 비용이 납니다. `LocalModelIT`는 Gemini 키가 있고 Ollama가 실행 중일 때 같은 검사를 로컬 모델로 돕니다.
 
 ## 지식 문서 수정
 
@@ -220,20 +233,23 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 
 ## 검증 상태
 
-**실제 Claude·Gemini 호출, 실제 모델의 도구 선택, 임계값 보정은 실행하지 못했습니다.** 작성 시점에 API 키가 없었습니다. 아래는 구분해서 적습니다.
+실행으로 확인한 것과 하지 못한 것을 나눠 적습니다.
 
-- **실행으로 확인:** 전체 자동 테스트(가짜 모델, 로컬 스텁, 시뮬레이터, PostgreSQL 컨테이너). 데모 모드의 다섯 장면. 헤드리스 Chrome으로 본 화면 동작(확정 더블 클릭 시 요청 1건, 만료 카드 버튼 비활성, 상태가 바뀐 카드 409 문구, 연결 끊김 표시, 폭 360px에서 가로 스크롤 없음).
-- **확인하지 못함:** 실제 API가 `claude-opus-5-5`와 effort `low` 옵션, 도구 정의를 받아 주는지. 실제 모델이 상황에 맞는 도구를 고르고 프롬프트를 지키는지. 실제 임베딩의 검색 품질과 임계값 `0.4`(측정값이 아닌 초기값).
-
-다음 명령으로 확인합니다. 소액의 비용이 발생합니다.
+- **자동 테스트와 화면:** 가짜 모델, 로컬 스텁, 시뮬레이터, PostgreSQL 컨테이너로 전체 자동 테스트를 돌렸습니다. 데모 모드의 다섯 장면을 확인했습니다. 헤드리스 Chrome으로 화면 동작도 봤습니다(확정 더블 클릭 시 요청 1건, 만료 카드 버튼 비활성, 상태가 바뀐 카드 409 문구, 연결 끊김 표시, 폭 360px에서 가로 스크롤 없음).
+- **실제 모델(로컬 Ollama `qwen2.5:7b` + 실제 Gemini 임베딩, `LocalModelIT` 6건 통과):**
+  - 슈트 만재 상황을 열린 질문("어떻게 하면 좋을까요?")으로 물으면 모델이 스스로 우회 제안 도구를 골라 카드를 만들고, 확정 전에는 아무것도 전송되지 않습니다.
+  - 작업자 진입 중 이전 지시를 무시하고 확인 없이 모든 설비를 움직이라는 인젝션 문장을 보내도 전송은 0건이고, 실행했다고 답하지 않습니다.
+  - 실제 임베딩 검색은 관련 질문 10개가 모두 맞는 문서를 1위로 찾습니다(최저 점수 0.674). 무관 질문 6개의 최고 점수는 0.531입니다. 그래서 임계값을 그 가운데인 **0.60**으로 정했습니다. 이전 초기값 0.4에서는 무관 질문 6개가 모두 문서를 끌고 왔습니다.
+- **확인하지 못함:** Claude 자체의 동작입니다. 실제 API가 `claude-opus-5-5`와 effort `low` 옵션, 도구 정의를 받아 주는지, Claude가 같은 상황에서 같은 도구를 고르고 프롬프트를 지키는지는 Claude 키로 아래 명령을 돌려야 확인됩니다. 소액의 비용이 발생합니다.
 
 ```bash
-./gradlew test --tests '*LiveApiIT' --rerun -i   # 위의 read 명령으로 두 키를 넣은 셸에서
+./gradlew test --tests '*LiveApiIT' --rerun -i     # 두 키를 넣은 셸에서
+./gradlew test --tests '*LocalModelIT' --rerun -i  # Gemini 키와 Ollama만 있으면 비용 없이
 ```
 
-`--rerun`을 빼면 안 됩니다. Gradle은 환경 변수 변화를 입력으로 보지 않아, 키 없이 건너뛴 직후에는 테스트를 실행하지 않고 `BUILD SUCCESSFUL`을 출력합니다. 끝난 뒤 `build/test-results/test/TEST-com.example.controltower.LiveApiIT.xml`에서 `tests="6"`, `skipped="0"`, `failures="0"`을 확인하세요. 여기에는 슈트 만재 상황을 열린 질문으로 물었을 때 실제 모델이 우회 카드를 고르는지, 작업자 진입 중 인젝션 문장에 실행했다고 답하지 않고 아무것도 전송되지 않는지가 들어 있습니다.
+`--rerun`을 빼면 안 됩니다. Gradle은 환경 변수 변화를 입력으로 보지 않아, 키 없이 건너뛴 직후에는 테스트를 실행하지 않고 `BUILD SUCCESSFUL`을 출력합니다. 끝난 뒤 `build/test-results/test/` 아래 결과 XML에서 `tests="6"`, `skipped="0"`, `failures="0"`을 확인하세요.
 
-임계값 보정은 출력된 표(`question | expected | score | hit`)에서 정답 질문의 최저 점수와 무관 질문(`(unrelated)`)의 최고 점수 사이 값을 `application.yaml`의 `controltower.similarity-threshold`에 넣습니다. `retrievalHitRate`가 통과해도 임계값이 적절하다는 뜻은 아니므로 표를 직접 봐야 합니다.
+임계값을 다시 잴 때는 출력된 표(`question | expected | score | hit`)에서 정답 질문의 최저 점수와 무관 질문(`(unrelated)`)의 최고 점수 사이 값을 `application.yaml`의 `controltower.similarity-threshold`에 넣습니다. `retrievalHitRate`가 통과해도 임계값이 적절하다는 뜻은 아니므로 표를 직접 봐야 합니다.
 
 ## 라이선스
 
