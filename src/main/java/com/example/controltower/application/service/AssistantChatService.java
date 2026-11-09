@@ -80,7 +80,8 @@ public class AssistantChatService implements AssistantChat {
         if (e instanceof RefusedException) {
             return Flux.just(new Failed("REFUSED", "이 질문에는 답변드리기 어렵습니다. 상담원 연결을 이용해 주세요."));
         }
-        log.log(System.Logger.Level.ERROR, "chat stream failed", e);
+        // 예외 문구에 모델이 만든 도구 이름이나 사용자 입력이 들 수 있어 클래스 이름만 남긴다.
+        log.log(System.Logger.Level.ERROR, "chat stream failed: " + e.getClass().getName());
         return Flux.just(new Failed("UPSTREAM", "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."));
     }
 

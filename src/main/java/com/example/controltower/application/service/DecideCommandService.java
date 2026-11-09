@@ -37,6 +37,7 @@ import java.util.UUID;
  */
 public final class DecideCommandService implements DecideCommand {
 
+    // 예외 문구에 장치 응답이나 인자 값이 들 수 있어 클래스 이름만 남긴다.
     private static final Logger log = System.getLogger(DecideCommandService.class.getName());
 
     private static final String DONE = "명령을 처리했습니다.";
@@ -144,7 +145,7 @@ public final class DecideCommandService implements DecideCommand {
         try {
             evaluation = evaluator.evaluate(card.spec());
         } catch (RuntimeException e) {
-            log.log(Level.ERROR, "unexpected failure during recheck: " + card.id(), e);
+            log.log(Level.ERROR, "unexpected failure during recheck: " + card.id() + " " + e.getClass().getName());
             return refuse(card, RECHECK_FAILED);
         }
         if (evaluation.decision() instanceof Decision.Denied(DenialCode code)) {
@@ -165,7 +166,7 @@ public final class DecideCommandService implements DecideCommand {
         } catch (GatewayUnavailableException e) {
             return afterSend(card, CommandStatus.FAILED, Outcome.CONFLICT, SEND_FAILED);
         } catch (RuntimeException e) {
-            log.log(Level.ERROR, "unexpected failure during send: " + card.id(), e);
+            log.log(Level.ERROR, "unexpected failure during send: " + card.id() + " " + e.getClass().getName());
             return unconfirmed(card);
         }
         boolean applied;
@@ -174,7 +175,7 @@ public final class DecideCommandService implements DecideCommand {
         } catch (GatewayUnavailableException e) {
             return unconfirmed(card);
         } catch (RuntimeException e) {
-            log.log(Level.ERROR, "unexpected failure during read-back: " + card.id(), e);
+            log.log(Level.ERROR, "unexpected failure during read-back: " + card.id() + " " + e.getClass().getName());
             return unconfirmed(card);
         }
         // 미반영을 FAILED로 적지 않는다. 늦게 반영될 수 있는데 실패로 보이면 다시 보내게 된다.

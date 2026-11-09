@@ -148,8 +148,8 @@
 
 ### 도구 인자 값을 로그와 결과에 남기지 않음
 
-- **이유:** 모델이 형식이 틀린 인자를 보내면 Spring AI 기본 처리가 그 값을 담은 예외 문구를 도구 결과로 돌려주고 WARN 로그에도 남겼습니다(실행으로 확인). 고정 결과를 돌려주는 `ToolExecutionExceptionProcessor`를 두고 `MethodToolCallback` 로그 레벨을 ERROR로 올렸습니다.
-- **대가:** 이 클래스의 다른 WARN 진단도 보이지 않습니다.
+- **이유:** 모델이 형식이 틀린 인자를 보내면 Spring AI 기본 처리가 그 값을 담은 예외 문구를 도구 결과로 돌려주고 WARN 로그에도 남겼습니다(실행으로 확인). 고정 결과를 돌려주는 `ToolExecutionExceptionProcessor`를 두고 `MethodToolCallback` 로그 레벨을 ERROR로 올렸습니다. 모델이 없는 도구 이름을 부르면 `DefaultToolCallingManager`가 그 이름을 WARN으로 남기므로 이 클래스도 ERROR로 올렸습니다. 같은 실패를 `MessageAggregator`가 예외 문구째 ERROR로 남겨 이 로거는 껐습니다. 끄자 느린 스택 로그에 가려 있던 경쟁이 드러나 오류 직전 청크가 사라졌습니다(`ChatStreamIT` 3회 연속 실패). `SpringAiAssistant`의 `concatMapIterable`이 오류를 받으면 대기 중인 청크를 버리기 때문이라 `concatMapDelayError`로 바꿨습니다. 그리고 스트림 실패와 확정 실패 로그는 예외 클래스 이름만 남깁니다(`ToolLoopTest`, `DecideCommandServiceTest`에서 출력 캡처로 확인).
+- **대가:** 이 클래스들의 다른 진단도 보이지 않고, 예기치 못한 실패 로그에 스택과 문구가 없어 원인 추적은 클래스 이름과 카드 ID로 해야 합니다.
 
 ## 보안과 설정
 
