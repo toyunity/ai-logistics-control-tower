@@ -55,3 +55,11 @@ create table if not exists command_audit (
     recorded_at timestamptz not null
 );
 create index if not exists command_audit_command on command_audit (command_id);
+
+-- IngestEventService.CODE와 같은 형식이다. PostgreSQL에는 add constraint if not exists가 없어 중복 예외를 삼킨다.
+-- 스크립트 분리기가 $$ 인용을 모르므로 본문을 작은따옴표 문자열로 쓴다.
+do 'begin
+    alter table equipment_events add constraint equipment_events_code_format
+        check (code ~ ''^[A-Z][A-Z0-9_]{0,39}$'');
+exception when duplicate_object then null;
+end';
