@@ -38,6 +38,12 @@ class ArchitectureTest {
             .should().onlyDependOnClassesThat()
             .resideInAnyPackage(APPLICATION, DOMAIN, "java..", "reactor.core..");
 
+    // 관측은 config의 데코레이터와 어댑터에서 한다. 위 규칙이 이미 막지만 의도를 따로 고정한다.
+    @ArchTest
+    static final ArchRule coreHasNoTelemetry = noClasses()
+            .that().resideInAnyPackage(DOMAIN, APPLICATION)
+            .should().dependOnClassesThat().resideInAnyPackage("io.micrometer..", "io.opentelemetry..");
+
     @ArchTest
     static final ArchRule adaptersDoNotReferenceEachOther = slices()
             .matching(ROOT + ".adapter.(*).(*)..")
