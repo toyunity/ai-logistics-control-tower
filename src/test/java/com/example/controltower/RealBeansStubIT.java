@@ -293,7 +293,7 @@ class RealBeansStubIT {
             assertNoForbiddenOptions(JSON.readTree(request.body()));
         }
         for (String thread : List.of(toolThread.get(), memoryThread.get())) {
-            assertThat(thread).doesNotStartWith("webflux-http-").doesNotStartWith("reactor-http-");
+            assertThat(thread).startsWith("boundedElastic-");
         }
     }
 

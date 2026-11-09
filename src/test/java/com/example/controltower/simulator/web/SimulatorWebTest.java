@@ -1,6 +1,7 @@
 package com.example.controltower.simulator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 
 import com.example.controltower.simulator.PlantSimulator;
 import com.example.controltower.simulator.SimSnapshot;
@@ -8,12 +9,16 @@ import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.test.json.JsonCompareMode;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 @WebFluxTest(
@@ -25,6 +30,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
             SimControlController.class
         },
         properties = "controltower.simulator.enabled=true")
+@ExtendWith(OutputCaptureExtension.class)
 class SimulatorWebTest {
 
     private static final Instant START = Instant.parse("2026-11-07T00:00:00Z");
@@ -38,7 +44,7 @@ class SimulatorWebTest {
     }
 
     @Autowired WebTestClient client;
-    @Autowired PlantSimulator sim;
+    @MockitoSpyBean PlantSimulator sim;
 
     @BeforeEach
     void restoreInitialState() {
@@ -135,10 +141,10 @@ class SimulatorWebTest {
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\"}").expectStatus().isBadRequest();
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"secret-input\",\"op\":1}")
                 .expectStatus().isBadRequest()
-                .expectBody(String.class).value(b -> assertThat(b).doesNotContain("secret-input"));
+                .expectBody().isEmpty();
         postJson("/sim/vendor-a/plc/CV-3/command", "not json secret-input")
                 .expectStatus().isBadRequest()
-                .expectBody(String.class).value(b -> assertThat(b).doesNotContain("secret-input"));
+                .expectBody().isEmpty();
     }
 
     @Test
@@ -273,5 +279,15 @@ class SimulatorWebTest {
 
         assertThat(cv3().run()).isEqualTo(1);
         post("/sim/scenarios/robot-battery").expectStatus().isOk();
+    }
+
+    // WebFlux 기본 처리기는 처리되지 않은 500을 경로와 예외 문구째 남긴다. 경로에는 요청이 보낸 ID가 들어 있다.
+    @Test
+    void failure_500WithoutPathOrExceptionTextInLogs(CapturedOutput output) {
+        doThrow(new IllegalStateException("SECRET-SIM-STATE")).when(sim).snapshot();
+
+        get("/sim/vendor-a/plc/ID-MARKER").expectStatus().isEqualTo(500).expectBody().isEmpty();
+
+        assertThat(output.getOut() + output.getErr()).doesNotContain("SECRET-SIM-STATE").doesNotContain("ID-MARKER");
     }
 }
