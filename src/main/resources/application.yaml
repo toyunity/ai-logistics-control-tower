@@ -40,7 +40,7 @@ logging.level.org.springframework.ai.chat.model.MessageAggregator: OFF   # 스�
 controltower:
   chat-model: claude-opus-5-5
   rewrite-model: claude-opus-5-5    # 지연을 줄여야 하면 측정 후 claude-haiku-5-5로 바꾼다
-  max-tokens: 8000                  # 끊긴 클라이언트의 답변 1건에 드는 비용 상한이기도 하다(README 참고)
+  max-tokens: 8000                  # 끊긴 클라이언트의 답변 1건에 드는 비용 상한이기도 하다(docs/operations.md 한계 참고)
   embedding-index: ${spring.ai.google.genai.embedding.text.options.model}-${spring.ai.google.genai.embedding.text.options.dimensions}   # 지식 문서 해시에 포함된다. 바뀌면 전체를 다시 임베딩한다
   top-k: 3
   similarity-threshold: 0.60        # 실측(Gemini 1536차원): 정답 최저 0.674, 무관 최고 0.531의 가운데. LocalModelIT·LiveApiIT 표로 다시 잰다
