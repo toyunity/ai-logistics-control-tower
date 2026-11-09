@@ -146,14 +146,28 @@ public class ServiceConfig {
     }
 
     // 실행 중 하나와 대기 하나만 둔다. 이벤트가 몰려도 감지가 줄줄이 쌓이지 않고, 버린 몫은 5초 주기가 맡는다.
-    // Executor 빈으로 내놓으면 스프링 기본 작업 실행기가 꺼지므로 빈으로 등록하지 않는다.
+    // Executor 빈으로 내놓으면 스프링 기본 작업 실행기가 꺼지므로 Executor가 아닌 타입으로 감싸 종료만 맡긴다.
     @Bean
-    IngestEvent ingestEvent(EventLog events, DetectAnomalies detection) {
-        ThreadPoolExecutor detectionExecutor = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS,
+    DetectionThreads detectionThreads() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(1), Thread.ofPlatform().name("ingest-detection").daemon().factory(),
                 new ThreadPoolExecutor.DiscardPolicy());
-        detectionExecutor.allowCoreThreadTimeOut(true);
-        return new IngestEventService(events, LineTopology.DEFAULT, detection, detectionExecutor);
+        pool.allowCoreThreadTimeOut(true);
+        return new DetectionThreads(pool);
+    }
+
+    @Bean
+    IngestEvent ingestEvent(EventLog events, DetectAnomalies detection, DetectionThreads threads) {
+        return new IngestEventService(events, LineTopology.DEFAULT, detection, threads.pool());
+    }
+
+    /** 컨텍스트가 닫힐 때 AutoCloseable이라 스프링이 close를 부른다. */
+    record DetectionThreads(ThreadPoolExecutor pool) implements AutoCloseable {
+
+        @Override
+        public void close() {
+            pool.shutdownNow();
+        }
     }
 
     @Bean
