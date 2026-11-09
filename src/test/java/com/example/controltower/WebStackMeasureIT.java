@@ -40,8 +40,9 @@ class WebStackMeasureIT {
     private static final int STREAMS = 200;
     private static final int REQUESTS = 1000;
     private static final int CONCURRENCY = 50;
-    private static final List<String> SERVER_PREFIXES =
-            List.of("http-nio-", "tomcat-handler-", "reactor-http-nio-", "boundedElastic-", "parallel-");
+    // Tomcat 요청 스레드, Netty 이벤트 루프, Reactor 스케줄러, Spring AI advisor 스케줄러.
+    private static final List<String> SERVER_PREFIXES = List.of(
+            "http-nio-", "tomcat-handler-", "webflux-http-", "reactor-http-", "boundedElastic-", "parallel-", "ai-advisor-");
 
     @LocalServerPort int port;
     @Autowired FakeChatModel model;
@@ -51,11 +52,12 @@ class WebStackMeasureIT {
     private static Map<String, Integer> serverThreads() {
         Map<String, Integer> counts = new TreeMap<>();
         for (Thread t : Thread.getAllStackTraces().keySet()) {
-            for (String prefix : SERVER_PREFIXES) {
-                if (t.getName().startsWith(prefix)) {
-                    counts.merge(prefix, 1, Integer::sum);
-                }
-            }
+            String name = t.getName();
+            SERVER_PREFIXES.stream()
+                    .filter(name::startsWith)
+                    .filter(prefix -> !name.startsWith("boundedElastic-evictor"))
+                    .findFirst()
+                    .ifPresent(prefix -> counts.merge(prefix, 1, Integer::sum));
         }
         return counts;
     }

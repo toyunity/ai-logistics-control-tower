@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 /** 게이트웨이 수신. 인증이 없다(README 한계). 중복은 저장소가 이벤트 ID로 거르고 200으로 답해 재전송을 멈춘다. */
 @RestController
@@ -30,12 +31,14 @@ public class EventController {
             @NotNull Instant occurredAt) {}
 
     @PostMapping("/api/events")
-    ResponseEntity<Void> receive(@Valid @RequestBody EventRequest e) {
-        try {
-            ingest.ingest(new EquipmentEvent(e.eventId(), e.equipmentId(), e.code(), e.value(), e.occurredAt()));
-        } catch (IllegalArgumentException rejected) {
-            return ResponseEntity.badRequest().build();
-        }
-        return ResponseEntity.ok().build();
+    Mono<ResponseEntity<Void>> receive(@Valid @RequestBody EventRequest e) {
+        return Blocking.call(() -> {
+            try {
+                ingest.ingest(new EquipmentEvent(e.eventId(), e.equipmentId(), e.code(), e.value(), e.occurredAt()));
+            } catch (IllegalArgumentException rejected) {
+                return ResponseEntity.badRequest().<Void>build();
+            }
+            return ResponseEntity.ok().<Void>build();
+        });
     }
 }

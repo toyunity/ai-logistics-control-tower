@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 public class KnowledgeController {
@@ -18,7 +19,7 @@ public class KnowledgeController {
     }
 
     @GetMapping("/api/knowledge/search")
-    List<SearchKnowledge.Hit> search(@RequestParam @NotBlank @Size(max = 500) String q) {
-        return searchKnowledge.search(q);
+    Mono<List<SearchKnowledge.Hit>> search(@RequestParam @NotBlank @Size(max = 500) String q) {
+        return Blocking.call(() -> searchKnowledge.search(q));
     }
 }

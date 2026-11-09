@@ -9,7 +9,7 @@ dependencyManagement { imports { mavenBom("org.springframework.ai:spring-ai-bom:
 val mockitoAgent = configurations.create("mockitoAgent")
 dependencies {
     mockitoAgent("org.mockito:mockito-core") { isTransitive = false }
-    implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.ai:spring-ai-starter-model-anthropic")
     implementation("org.springframework.ai:spring-ai-starter-model-google-genai-embedding")
@@ -19,7 +19,6 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-rag")
     implementation("io.projectreactor:reactor-core")
     runtimeOnly("org.postgresql:postgresql")
-    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webflux-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")

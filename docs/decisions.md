@@ -4,11 +4,22 @@
 
 ## 구조
 
-### WebFlux 대신 MVC에서 `Flux` 반환
+### MVC에서 WebFlux로 전환, 블로킹 호출은 `boundedElastic`으로
 
-- **이유:** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적습니다.
-- **근거:** MVC에서 `Flux<ServerSentEvent>`가 청크 단위로 전달되는 것을 실제 HTTP로 확인했습니다(`ChatStreamIT`).
-- **재검토:** 동시 연결이 많아져 스레드나 커넥션이 병목이 될 때.
+- **처음 결정:** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적다고 보고 MVC에서 `Flux<ServerSentEvent>`를 돌려줬습니다.
+- **바꾼 이유:** 이후 붙일 MCP 서버(`spring-ai-starter-mcp-server-webflux`)가 WebFlux를 전제로 하고, 요청 스레드 수가 동시 요청 수를 따라 늘지 않게 하려는 것입니다. 코어(domain, application)는 동기 코드 그대로 두고 웹 어댑터만 바꿨습니다. 단건 응답은 `Mono.fromCallable(...).subscribeOn(boundedElastic())`(`Blocking.call`), 채팅은 `Flux.defer(...).subscribeOn(boundedElastic())`입니다. `subscribeOn`은 구독과 함께 `request(n)`도 그 스레드로 옮기므로 메모리 저장, 검색, 도구의 설비 호출이 Netty 이벤트 루프에서 시작되지 않습니다. 각 웹 슬라이스 테스트가 서비스 대역이 `boundedElastic-` 스레드에서 불렸는지 확인합니다.
+- **대가:** JDBC와 설비 HTTP(RestClient)는 여전히 블로킹이라 스레드를 아낀 것이 아니라 Tomcat 요청 스레드에서 `boundedElastic` 풀로 옮긴 것입니다. 이 풀은 코어 수×10(이 머신 100개)이 상한이고, MVC에서도 채팅 중 이 풀이 100개까지 찬 것으로 보아 Spring AI 내부도 같은 풀을 씁니다(실행으로 관찰). 그래서 블로킹 작업 동시 실행 수가 그 상한에 묶이고 나머지는 큐에서 기다립니다. 세션은 `InMemoryWebSessionStore`라 서버 재시작 시 사라지고, 시작된 세션이 1만 개를 넘으면 새 로그인이 실패합니다(판단: 기본 설정 읽기).
+- **오류 로그:** MVC의 `DefaultHandlerExceptionResolver`처럼 거부된 입력을 WARN으로 남기는 처리기는 WebFlux에 없어 그 로그 설정을 지웠습니다(입력 오류 로그 테스트가 설정 없이 통과). 대신 WebFlux 기본 오류 처리기가 처리되지 않은 500을 요청 경로와 쿼리, 예외 문구째 ERROR로 남기는 것을 테스트로 확인해, 쿼리로 자유 문자열을 받는 지식 검색도 `WebErrors` 대상에 넣었습니다.
+- **측정(실행, 로컬 10코어, 가짜 모델, `WebStackMeasureIT`):** 같은 하네스를 전환 직전 커밋과 전환 후에 각각 두 번 돌렸습니다. 숫자는 서버 쪽 스레드 이름으로 센 것입니다.
+
+  | 조건 | MVC(Tomcat) | WebFlux(Netty) |
+  |---|---|---|
+  | SSE 200개 동시(각 약 10초) 최대 스레드 | 요청 스레드 21~22, `boundedElastic` 100 | 이벤트 루프 10, `boundedElastic` 100 |
+  | SSE 200개 완료 시간 | 12.4~12.5초 | 12.4~12.5초 |
+  | 현황 조회 1,000건(동시 50, 설비는 같은 프로세스 시뮬레이터) | 847~1,035건/초, 요청 스레드 108~125 | 823~1,007건/초, 이벤트 루프 10 |
+
+  처리량은 차이가 없고, 달라진 것은 동시 요청에 따라 늘던 요청 스레드가 이벤트 루프 10개로 고정된 것입니다. SSE는 MVC에서도 비동기로 처리돼 요청 스레드를 붙잡지 않았습니다. 두 스택 모두 `boundedElastic`이 상한(100)에 닿았습니다.
+- **재검토:** 블로킹 작업이 `boundedElastic` 상한에서 밀리기 시작할 때. 그때는 JDBC 호출을 가상 스레드 실행기로 옮기는 것을 먼저 봅니다.
 
 ### 메모리 advisor를 RAG보다 먼저 실행
 
