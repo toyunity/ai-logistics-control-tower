@@ -66,7 +66,7 @@ controltower:
   detection.enabled: true           # 5초 주기 감지. 끄면 이벤트 수신 때만 감지한다
   equipment.circuit-breaker:         # 설비군(컨베이어, 분류기, 로봇, 안전 PLC)마다 하나. 읽기와 명령 전송이 같은 회로를 쓴다
     sliding-window-size: 6            # 최근 6건(최소 호출 수도 6)을 본다. 무응답이면 어느 설비군이든 조회 한 번에 실패 1건이라 조회 6번(약 18초) 뒤 열린다
-    failure-rate-threshold: 50        # %. 연결 실패, 타임아웃, 5xx만 센다. 4xx는 기기가 답한 것이라 세지 않는다
+    failure-rate-threshold: 50        # %. 실패는 연결 실패, 타임아웃, 5xx뿐이다. 4xx는 성공으로 기록돼 실패율을 묽힌다
     wait-in-open-state: 10s           # 이 동안은 설비가 회복돼도 UNKNOWN이고 명령은 보내지 않는다. 감지 주기(5초) 두 번
     half-open-calls: 3                # 회복됐으면 컨베이어 조회 한 번(3건)으로 끝난다. 아직 죽어 있으면 남은 시험 호출을 다음 조회들이 타임아웃(3초)씩 쓰며 소모한다
   mcp:

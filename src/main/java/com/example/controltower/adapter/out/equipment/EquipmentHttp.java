@@ -127,7 +127,7 @@ class EquipmentHttp {
         String outcome = UNAVAILABLE;
         try {
             String url = url(path, uriVariables);
-            // 회로는 HTTP 교환만 감싼다. 번역 실패는 기기가 답한 것이라 세지 않는다.
+            // 회로는 HTTP 교환만 감싼다. 번역 실패는 기기가 답한 것이라 교환은 성공으로 기록된다.
             String json = breakers.get(group)
                     .executeSupplier(() -> client.get().uri(url, uriVariables).retrieve().body(String.class));
             R result = translate.apply(STRICT.readValue(json, wire));
@@ -193,7 +193,8 @@ class EquipmentHttp {
     }
 
     /**
-     * 응답이 없거나 5xx일 때만 실패로 센다. 4xx, 3xx, 형식이 어긋난 본문은 게이트웨이가 답한 것이라 세지 않는다.
+     * 응답이 없거나 5xx일 때만 실패로 센다. 4xx, 3xx는 게이트웨이가 답한 것이라 성공으로 기록되고 실패율을 묽힌다.
+     * 형식이 어긋난 본문은 회로 밖에서 번역하므로 HTTP 교환은 성공으로 기록된다.
      * 최소 호출 수를 윈도 크기와 같게 둬야 기동 직후 몇 건의 실패로 열리지 않는다.
      */
     static CircuitBreakerConfig breakerConfig(int window, float failureRate, Duration openWait, int halfOpenCalls) {

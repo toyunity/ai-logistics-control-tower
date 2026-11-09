@@ -14,7 +14,7 @@
 - **모르면 막습니다.** 확정할 때 설비 상태를 다시 읽어 제안 시점과 다르거나, 안전 신호가 오래됐거나, 작업자가 구역에 있으면 보내지 않습니다.
 - **한 번만 보냅니다.** 동시에 눌러도 DB 제약이 하나만 통과시킵니다. 결과를 모르면 다시 보내지 않고 현장 확인을 요청합니다.
 
-Java 25, Spring Boot 4.1.2, Spring AI 2.0.2 · 답변 Claude, 임베딩 Gemini, 저장 PostgreSQL(pgvector) · 헥사고날 구조
+Java 25, Spring Boot 4.1.2(WebFlux), Spring AI 2.0.2 · 답변 Claude, 임베딩 Gemini, 저장 PostgreSQL(pgvector) · Resilience4j 서킷 브레이커, MCP(조회 전용), OpenTelemetry · 헥사고날 구조
 
 ## 장면
 
