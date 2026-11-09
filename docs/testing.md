@@ -10,11 +10,11 @@
 | 애플리케이션 | `ProposeCommandServiceTest`, `DecideCommandServiceTest`, `DetectAnomaliesServiceTest`, `IngestEventServiceTest`, `PlantStatusServiceTest`, `StateDigestTest` | 메모리 대역 | 제안과 확정, 상태 재비교, 한 번만 전송, 결과 미확인 처리, 감지와 등급 갱신 |
 | 계약 | `*Contract`(설비 4종, 저장소 4종) | 메모리 대역, HTTP 어댑터, JDBC 어댑터가 같은 테스트를 통과 | 대역이 실제 어댑터와 같은 의미로 동작함 |
 | 설비 어댑터 | `VendorAConveyorsTest`, `VendorBSortersTest`, `FleetRobotsTest`, `SafetyPlcSignalsTest`, `EquipmentAdaptersSimulatorIT` | 로컬 HTTP 스텁, 시뮬레이터 | 제조사 형식 변환, 범위 밖 값과 타임아웃은 실패로 처리 |
-| 대화와 도구 | `AssistantPipelineTest`, `ToolLoopTest`, `PlantToolsTest`, `DemoIntentTest`, `DemoEmbeddingModelTest` | 가짜 모델 | 이벤트 순서, `action` 위치, 도구 반복, 잘못된 ID와 인자, 도구 한도, 데모 검색 순위 |
+| 대화와 도구 | `AssistantPipelineTest`, `ToolLoopTest`, `PlantToolsTest`, `DemoIntentTest`, `DemoEmbeddingModelTest` | 가짜 모델 | 이벤트 순서, `action` 위치, 도구 반복, 잘못된 ID와 인자, 인자 변환 실패까지 세는 도구 한도, 모델이 만든 도구 이름이 로그에 남지 않음, 데모 검색 순위 |
 | 웹 슬라이스 | `ChatControllerTest`, `CommandControllerTest`, `PlantControllerTest`, `EventControllerTest`, `MaintenanceControllerTest`, `KnowledgeControllerTest` | MockMvc | 응답 코드표, 권한(참관자, 다른 운영자, 세션 없음), 로그와 본문에 입력이 남지 않음 |
-| 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 도구 어댑터는 입력 포트만 호출 |
+| 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 도구 어댑터는 입력 포트만 호출, 들어오는 어댑터는 출력 포트에 의존하지 않음 |
 | 설정 | `ApiKeyGuardTest`, `ContextLoadsIT`, `ToolExceptionProcessorTest`, `DetectionThreadsTest` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개, 도구 예외의 고정 결과와 클래스 이름만 남는 로그, 종료 시 감지 스레드 정리 |
-| 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT`, `StaleCommandCleanupIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 승자 하나, 이벤트 전송, 웹 서버 시작 전 기동 정리 |
+| 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT`, `StaleCommandCleanupIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 실행 잠금 키당 승자 하나, 스키마 업그레이드, 이벤트 전송, 웹 서버 시작 전 기동 정리 |
 | 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
 | 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변, 참관자와 익명은 모든 제안이 권한 없음 |
 | SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과 |
