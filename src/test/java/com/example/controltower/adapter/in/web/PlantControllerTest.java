@@ -186,7 +186,7 @@ class PlantControllerTest {
      */
     @Test
     @Timeout(30)
-    void statusUnderSlowAdapter_returnsWithin3500ms() throws Exception {
+    void statusUnderHangingAdapter_returnsThatGroupUnknownAfterReadTimeout() throws Exception {
         mode = Mode.HANG;
 
         long started = System.nanoTime();
