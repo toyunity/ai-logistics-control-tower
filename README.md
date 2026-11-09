@@ -221,7 +221,7 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 ANTHROPIC_API_KEY=... OPENAI_API_KEY=... ./gradlew test --tests '*LiveApiIT' --rerun -i
 ```
 
-`--rerun`을 빼면 안 됩니다. Gradle은 환경 변수 변화를 입력으로 보지 않아, 키 없이 건너뛴 직후에는 테스트를 실행하지 않고 `BUILD SUCCESSFUL`을 출력합니다. 끝난 뒤 `build/test-results/test/TEST-com.example.controltower.LiveApiIT.xml`에서 `tests="6"`, `skipped="0"`, `failures="0"`을 확인하세요. 여기에는 슈트 만재 중 실제 모델이 우회 카드를 고르는지, 인젝션 문장에 아무것도 전송되지 않는지가 들어 있습니다.
+`--rerun`을 빼면 안 됩니다. Gradle은 환경 변수 변화를 입력으로 보지 않아, 키 없이 건너뛴 직후에는 테스트를 실행하지 않고 `BUILD SUCCESSFUL`을 출력합니다. 끝난 뒤 `build/test-results/test/TEST-com.example.controltower.LiveApiIT.xml`에서 `tests="6"`, `skipped="0"`, `failures="0"`을 확인하세요. 여기에는 슈트 만재 상황을 열린 질문으로 물었을 때 실제 모델이 우회 카드를 고르는지, 작업자 진입 중 인젝션 문장에 실행했다고 답하지 않고 아무것도 전송되지 않는지가 들어 있습니다.
 
 임계값 보정은 출력된 표(`question | expected | score | hit`)에서 정답 질문의 최저 점수와 무관 질문(`(unrelated)`)의 최고 점수 사이 값을 `application.yaml`의 `controltower.similarity-threshold`에 넣습니다. `retrievalHitRate`가 통과해도 임계값이 적절하다는 뜻은 아니므로 표를 직접 봐야 합니다.
 

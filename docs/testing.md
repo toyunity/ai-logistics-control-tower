@@ -24,7 +24,6 @@
 
 결과 파일은 `build/test-results/test/`에 `TEST-com.example.controltower...xml` 형식으로 남습니다.
 
-
 - `./gradlew test`: 전체 실행. Docker가 필요합니다. 비용은 들지 않습니다.
 - CI는 PR과 `main` 푸시마다 같은 명령을 실행합니다. 키가 없으므로 `LiveApiIT`는 건너뜁니다.
 - `LiveApiIT`는 키 2개가 모두 있을 때만 실행됩니다. 키가 있는 셸에서는 `./gradlew test`도 비용이 발생합니다. 실행 방법은 README의 검증 상태를 보세요.
