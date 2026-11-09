@@ -6,6 +6,7 @@ import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.SlidingWindowType;
@@ -31,7 +32,7 @@ import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 어댑터 공통 HTTP. 재시도하지 않는다. 명령을 두 번 보낼지는 호출자가 결과를 보고 정한다.
+ * 어댑터 공통 HTTP. 설비군마다 회로 하나를 두고, 재시도하지 않는다. 명령을 두 번 보낼지는 호출자가 결과를 보고 정한다.
  * 스프링 예외의 메시지에는 응답 본문과 URL이 들어가므로 원인으로 잇지 않는다.
  */
 @Component
@@ -106,7 +107,10 @@ class EquipmentHttp {
     /** 번역까지 여기서 감싸므로 도메인 레코드의 검증 실패도 게이트웨이 장애가 된다. 값은 URI 템플릿으로 넣어 경로를 벗어나지 못한다. */
     <T, R> R read(Group group, String path, Class<T> wire, Function<T, R> translate, Object... uriVariables) {
         try {
-            String json = client.get().uri(url(path, uriVariables), uriVariables).retrieve().body(String.class);
+            String url = url(path, uriVariables);
+            // 회로는 HTTP 교환만 감싼다. 번역 실패는 기기가 답한 것이라 세지 않는다. 열린 회로도 이 catch로 거절된다.
+            String json = breakers.get(group)
+                    .executeSupplier(() -> client.get().uri(url, uriVariables).retrieve().body(String.class));
             return translate.apply(STRICT.readValue(json, wire));
         } catch (RuntimeException e) {
             throw unavailable();
@@ -117,14 +121,17 @@ class EquipmentHttp {
         String url = url(path, uriVariables);
         boolean succeeded;
         try {
-            succeeded = client.post()
+            succeeded = breakers.get(group).executeSupplier(() -> client.post()
                     .uri(url, uriVariables)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
                     .toBodilessEntity()
                     .getStatusCode()
-                    .is2xxSuccessful();
+                    .is2xxSuccessful());
+        } catch (CallNotPermittedException e) {
+            // 열린 회로에서는 요청이 나가지 않았으므로 결과 미확인이 아니라 보내지 못한 것이다.
+            throw unavailable();
         } catch (ResourceAccessException e) {
             if (neverReached(e.getCause())) {
                 throw unavailable();
