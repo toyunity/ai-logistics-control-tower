@@ -17,7 +17,7 @@
 | 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT`, `StaleCommandCleanupIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 실행 잠금 키당 승자 하나, 스키마 업그레이드, 이벤트 전송, 웹 서버 시작 전 기동 정리 |
 | 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
 | 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변, 참관자와 익명은 모든 제안이 권한 없음 |
-| SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과, 도구 실행과 메모리 저장이 Netty 스레드에서 돌지 않음 |
+| SDK 경계 | `RealBeansStubIT`, `LocalOllamaStreamIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과, 도구 실행과 메모리 저장이 `boundedElastic`에서 돎, Ollama 청크와 메모리 저장이 Netty 스레드에서 돌지 않음 |
 | 실제 모델 | `LiveApiIT`, `LocalModelIT` (공통 `RealModelChecks`) | 실제 Claude와 Gemini, 또는 로컬 Ollama와 실제 Gemini | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
 
 ## 실행

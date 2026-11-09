@@ -7,16 +7,16 @@
 ### MVC에서 WebFlux로 전환, 블로킹 호출은 `boundedElastic`으로
 
 - **처음 결정:** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적다고 보고 MVC에서 `Flux<ServerSentEvent>`를 돌려줬습니다.
-- **바꾼 이유:** 이후 붙일 MCP 서버(`spring-ai-starter-mcp-server-webflux`)가 WebFlux를 전제로 하고, 요청 스레드 수가 동시 요청 수를 따라 늘지 않게 하려는 것입니다. 코어(domain, application)는 동기 코드 그대로 두고 웹 어댑터만 바꿨습니다. 단건 응답은 `Mono.fromCallable(...).subscribeOn(boundedElastic())`(`Blocking.call`), 채팅은 `Flux.defer(...).subscribeOn(boundedElastic())`입니다. `subscribeOn`은 구독과 `request(n)`만 그 스레드로 옮깁니다. 청크가 온 뒤의 일(도구 실행, 완료 시 메모리 저장)은 SDK가 청크를 내보내는 스레드에서 돕니다. `ChatControllerTest`, `CommandControllerTest`, `KnowledgeControllerTest`가 서비스 대역이 `boundedElastic-` 스레드에서 불렸는지 확인합니다. `RealBeansStubIT`는 실제 Anthropic SDK 빈과 로컬 스텁으로 도구 실행과 메모리 저장이 Netty 스레드가 아닌 곳(실행 결과 `boundedElastic`)에서 도는지 확인합니다. Ollama(`local` 프로필) 경로는 확인하지 않았습니다.
-- **대가:** JDBC와 설비 HTTP(RestClient)는 여전히 블로킹이라 스레드를 아낀 것이 아니라 Tomcat 요청 스레드에서 `boundedElastic` 풀로 옮긴 것입니다. 이 풀은 코어 수×10(이 머신 100개)이 상한이고, MVC에서도 채팅 중 이 풀이 100개까지 찬 것으로 보아 Spring AI 내부도 같은 풀을 씁니다(실행으로 관찰). 그래서 블로킹 작업 동시 실행 수가 그 상한에 묶이고 나머지는 큐에서 기다립니다. 세션은 `InMemoryWebSessionStore`라 서버 재시작 시 사라지고, 기본 최대 세션 수가 10,000입니다(판단: 클래스의 기본값을 바이트코드로 확인, 넘쳤을 때 동작은 실행하지 않음).
+- **바꾼 이유:** 이후 붙일 MCP 서버(`spring-ai-starter-mcp-server-webflux`)가 WebFlux를 전제로 하고, 요청 스레드 수가 동시 요청 수를 따라 늘지 않게 하려는 것입니다. 코어(domain, application)는 동기 코드 그대로 두고 웹 어댑터만 바꿨습니다. 단건 응답은 `Mono.fromCallable(...).subscribeOn(boundedElastic())`(`Blocking.call`), 채팅은 `Flux.defer(...).subscribeOn(boundedElastic())`입니다. `subscribeOn`은 구독과 `request(n)`만 그 스레드로 옮깁니다. 청크가 온 뒤의 일(도구 실행, 완료 시 메모리 저장)은 SDK가 청크를 내보내는 스레드에서 돕니다. `ChatControllerTest`, `CommandControllerTest`, `KnowledgeControllerTest`가 서비스 대역이 `boundedElastic-` 스레드에서 불렸는지 확인합니다. `RealBeansStubIT`는 실제 Anthropic SDK 빈과 로컬 스텁으로 도구 실행과 메모리 저장이 Netty 스레드가 아닌 곳(실행 결과 `boundedElastic`)에서 도는지 확인합니다. Ollama(`local` 프로필)는 자동 구성 WebClient가 Reactor Netty를 써서 청크가 서버의 이벤트 루프(`webflux-http-nio-*`)에서 나오는 것을 `LocalOllamaStreamIT`로 확인했습니다. 메모리 저장은 그때도 `boundedElastic`이었지만, 청크 뒤에 붙는 일이 서버 루프를 같이 쓰지 않게 `LocalOllamaConfig`에서 Ollama만 JDK HTTP 커넥터로 받게 했습니다(전환 전 동작).
+- **대가:** JDBC와 설비 HTTP(RestClient)는 여전히 블로킹이라 스레드를 아낀 것이 아니라 Tomcat 요청 스레드에서 `boundedElastic` 풀로 옮긴 것입니다. 이 풀은 코어 수×10(이 머신 100개)이 상한이고, MVC에서도 채팅 중 이 풀이 100개까지 찼습니다(실행으로 관찰). 그래서 Spring AI 내부도 같은 풀을 쓴다고 봅니다(판단). 그래서 블로킹 작업 동시 실행 수가 그 상한에 묶이고 나머지는 큐에서 기다립니다. 세션은 `InMemoryWebSessionStore`라 서버 재시작 시 사라지고, 기본 최대 세션 수가 10,000입니다(판단: 클래스의 기본값을 바이트코드로 확인, 넘쳤을 때 동작은 실행하지 않음).
 - **오류 로그:** MVC의 `DefaultHandlerExceptionResolver`처럼 거부된 입력을 WARN으로 남기는 처리기는 WebFlux에 없어 그 로그 설정을 지웠습니다(입력 오류 로그 테스트가 설정 없이 통과). 대신 WebFlux 기본 오류 처리기가 처리되지 않은 500을 요청 경로와 쿼리, 예외 문구째 ERROR로 남기는 것을 테스트로 확인해, 쿼리로 자유 문자열을 받는 지식 검색도 `WebErrors` 대상에 넣었습니다.
-- **측정(실행, 로컬 10코어, 가짜 모델, `WebStackMeasureIT`):** 같은 하네스를 전환 직전 커밋과 전환 후에 각각 두 번 돌렸습니다. 숫자는 서버 쪽 스레드 이름으로 센 것입니다.
+- **측정(실행, 로컬 10코어, 가짜 모델, `WebStackMeasureIT`):** 같은 하네스를 전환 직전 커밋과 전환 후에 각각 두 번 돌렸습니다. 숫자는 서버 쪽 스레드 이름 접두사로 센 것입니다. SSE는 100ms마다 센 표본 중 최대이고, 현황 조회는 마지막 요청을 보낸 시점의 한 번 표본입니다. `http-nio`에는 Tomcat의 수락·폴러 스레드도 들어 있습니다.
 
   | 조건 | MVC(Tomcat) | WebFlux(Netty) |
   |---|---|---|
-  | SSE 200개 동시(각 약 10초) 최대 스레드 | 요청 스레드 21~22, `boundedElastic` 100 | 이벤트 루프 10, `boundedElastic` 100 |
+  | SSE 200개 동시(각 약 10초), 표본 중 최대 스레드 | `http-nio` 21~22, `boundedElastic` 100 | 이벤트 루프 10, `boundedElastic` 100 |
   | SSE 200개 완료 시간 | 12.4~12.5초 | 12.4~12.5초 |
-  | 현황 조회 1,000건(동시 50, 설비는 같은 프로세스 시뮬레이터) | 847~1,035건/초, 요청 스레드 108~125 | 823~1,007건/초, 이벤트 루프 10 |
+  | 현황 조회 1,000건(동시 50, 설비는 같은 프로세스 시뮬레이터), 마지막 요청 시점 스레드 | 847~1,035건/초, `http-nio` 108~125 | 823~1,007건/초, 이벤트 루프 10 |
 
   처리량은 차이가 없고, 달라진 것은 동시 요청에 따라 늘던 요청 스레드가 이벤트 루프 10개로 고정된 것입니다. SSE는 MVC에서도 비동기로 처리돼 요청 스레드를 붙잡지 않았습니다. 두 스택 모두 `boundedElastic`이 상한(100)에 닿았습니다.
 - **재검토:** 블로킹 작업이 `boundedElastic` 상한에서 밀리기 시작할 때. 그때는 JDBC 호출을 가상 스레드 실행기로 옮기는 것을 먼저 봅니다.
