@@ -1,6 +1,6 @@
 # 설비 관제 어시스턴트
 
-[![CI](https://github.com/toyunity/ai-consult-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/toyunity/ai-consult-chatbot/actions/workflows/ci.yml)
+[![CI](https://github.com/toyunity/ai-logistics-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/toyunity/ai-logistics-control-tower/actions/workflows/ci.yml)
 
 > **설비와 데이터는 가상이고 시뮬레이터 전용이며 실제 안전 장치를 대신할 수 없다.**
 
