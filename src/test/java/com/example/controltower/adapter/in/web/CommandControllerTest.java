@@ -2,8 +2,10 @@ package com.example.controltower.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.controltower.application.port.in.CommandResult;
 import com.example.controltower.application.port.in.DecideCommand;
 import com.example.controltower.application.service.DecideCommandService;
+import com.example.controltower.domain.Actor;
 import com.example.controltower.domain.CommandSpec;
 import com.example.controltower.domain.CommandStatus;
 import com.example.controltower.domain.DenialCode;
@@ -29,6 +31,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +49,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.server.WebSession;
+import org.springframework.web.server.session.InMemoryWebSessionStore;
+import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
 
 /** 실제 DecideCommandService를 메모리 대역 위에 올려 세션 신원부터 응답 코드까지 함께 본다. */
 @WebFluxTest({CommandController.class, SessionController.class})
@@ -264,6 +274,53 @@ class CommandControllerTest {
         assertThat(result.getStatus().value()).isEqualTo(400);
         assertThat(result.getResponseHeaders().get(HttpHeaders.SET_COOKIE)).isNull(); // 실패한 로그인은 세션을 만들지 않는다
         assertThat(output.getOut() + output.getErr()).doesNotContain("ACCOUNT-MARKER");
+    }
+
+    // MVC에서는 연결이 끊겨도 처리가 끝까지 갔다. 확정이 전송 뒤 기록 전에 끊기면 실행 중 상태로 남고 감사 기록이 빠진다.
+    @Test
+    void clientDisconnect_doesNotInterruptConfirmOrReject() throws Exception {
+        assertRunsToCompletion((c, s) -> c.confirm(UUID.randomUUID(), s));
+        assertRunsToCompletion((c, s) -> c.reject(UUID.randomUUID(), s));
+    }
+
+    private static void assertRunsToCompletion(
+            BiFunction<CommandController, WebSession, Mono<?>> call) throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean();
+        DecideCommand held = new DecideCommand() {
+            @Override
+            public CommandResult confirm(UUID id, Actor actor) {
+                return hold();
+            }
+
+            @Override
+            public CommandResult reject(UUID id, Actor actor) {
+                return hold();
+            }
+
+            private CommandResult hold() {
+                entered.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    interrupted.set(true);
+                }
+                interrupted.compareAndSet(false, Thread.interrupted());
+                done.countDown();
+                return new CommandResult(CommandResult.Outcome.OK, CommandStatus.REJECTED, "ok");
+            }
+        };
+        WebSession session = new InMemoryWebSessionStore().createWebSession().block();
+
+        Disposable subscription = call.apply(new CommandController(held), session).subscribe();
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        subscription.dispose();
+        release.countDown();
+
+        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(interrupted).isFalse();
     }
 
     @Test
