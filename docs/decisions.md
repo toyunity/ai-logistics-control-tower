@@ -161,7 +161,7 @@
 - **근거:** 두 경로에서 실제로 새는 것을 확인하고 막았습니다.
   - 입력 검증 실패: `DefaultHandlerExceptionResolver`가 거부된 값을 WARN으로 기록했습니다. 로그 레벨을 올렸습니다(`ChatControllerTest`).
   - NUL 문자 입력: pgjdbc 예외에 전체 메시지가 포함됐습니다. `logServerErrorDetail: false`로 막았습니다(`ChatStreamIT`).
-- **남은 위험:** 업스트림 오류 메시지가 입력을 포함하면 `AssistantChatService`의 오류 로그에 남을 수 있습니다.
+- **오류 로그:** 업스트림 오류 메시지에 입력이나 모델이 만든 도구 이름이 섞일 수 있어 예외는 클래스 이름만 남깁니다(`ToolLoopTest`).
 
 ### API 키가 없으면 기동 실패
 
