@@ -30,7 +30,6 @@ final class EquipmentStub implements AutoCloseable {
     static final Duration CONNECT_TIMEOUT = Duration.ofMillis(500);
     static final Duration READ_TIMEOUT = Duration.ofMillis(300);
     private static final Reply NOT_FOUND = new Reply(404, "");
-    private static final Reply UNAVAILABLE = new Reply(503, "");
     private static final Reply HANG = new Reply(0, "");
     private static final Reply DROP = new Reply(0, "");
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -45,7 +44,7 @@ final class EquipmentStub implements AutoCloseable {
     private final Map<String, Function<String, Reply>> routes = new ConcurrentHashMap<>();
     private final List<String> sent = new CopyOnWriteArrayList<>();
     private final CountDownLatch closing = new CountDownLatch(1);
-    private volatile boolean down;
+    private volatile boolean stopped;
     private volatile boolean losingSendResponses;
 
     EquipmentStub() {
@@ -66,10 +65,8 @@ final class EquipmentStub implements AutoCloseable {
             if (method.equals("POST")) {
                 sent.add(body);
             }
-            Reply reply = down
-                    ? UNAVAILABLE
-                    : routes.getOrDefault(method + " " + exchange.getRequestURI().getRawPath(), b -> NOT_FOUND)
-                            .apply(body);
+            Reply reply = routes.getOrDefault(method + " " + exchange.getRequestURI().getRawPath(), b -> NOT_FOUND)
+                    .apply(body);
             if (reply == HANG || (losingSendResponses && method.equals("POST"))) {
                 closing.await(10, TimeUnit.SECONDS);
                 return;
@@ -104,8 +101,12 @@ final class EquipmentStub implements AutoCloseable {
         on(method, path, b -> DROP);
     }
 
-    void goDown() {
-        down = true;
+    /** 서버를 내려 연결이 거부되게 한다. 5xx는 명령 결과를 모르는 것으로 보므로 꺼진 게이트웨이를 흉내 내지 못한다. */
+    synchronized void goDown() {
+        if (!stopped) {
+            stopped = true;
+            server.stop(0);
+        }
     }
 
     /** 요청은 적용하되 응답을 돌려주지 않는다. */
@@ -148,6 +149,6 @@ final class EquipmentStub implements AutoCloseable {
     @Override
     public void close() {
         closing.countDown();
-        server.stop(0);
+        goDown();
     }
 }
