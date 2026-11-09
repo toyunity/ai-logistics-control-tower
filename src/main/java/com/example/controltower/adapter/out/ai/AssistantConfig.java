@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
@@ -62,9 +64,10 @@ public class AssistantConfig {
             ChatMemory memory,
             VectorStore store,
             ControlTowerProperties props,
-            ToolCallbackProvider tools) {
+            ToolCallbackProvider tools,
+            ChatModel chatModel) {
         // CompressionQueryTransformer가 빌드 시점에 클라이언트를 만들므로 옵션을 먼저 넣어야 한다.
-        rewriter.defaultOptions(options(props.rewriteModel(), props));
+        rewriter.defaultOptions(options(chatModel, props.rewriteModel(), props.maxTokens()));
         QueryTransformer compression = CompressionQueryTransformer.builder().chatClientBuilder(rewriter).build();
         QueryTransformer rewriteFollowUp = q -> {
             long userTurns = q.history().stream().filter(m -> m.getMessageType() == MessageType.USER).count();
@@ -86,7 +89,7 @@ public class AssistantConfig {
 
         // 메모리가 먼저 돌아야 원래 질문이 저장되고 RAG가 이력을 받는다.
         // 도구 반복 advisor는 RAG 안쪽(application.yaml의 tool-calling.advisor-order)이라 메모리와 검색이 턴당 한 번 돈다.
-        return main.defaultOptions(options(props.chatModel(), props))
+        return main.defaultOptions(options(chatModel, props.chatModel(), props.maxTokens()))
                 .defaultToolCallbacks(tools.getToolCallbacks())
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
@@ -128,10 +131,10 @@ public class AssistantConfig {
         }
     }
 
-    private static AnthropicChatOptions.Builder options(String model, ControlTowerProperties props) {
+    static ChatOptions.Builder<?> options(ChatModel chatModel, String model, int maxTokens) {
         return AnthropicChatOptions.builder()
                 .model(model)
-                .maxTokens(props.maxTokens())
+                .maxTokens(maxTokens)
                 .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build());
     }
 }
