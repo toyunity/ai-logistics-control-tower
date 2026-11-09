@@ -92,6 +92,7 @@ class EquipmentHttp {
             CircuitBreakerConfig breakerConfig) {
         this.env = env;
         for (Group group : Group.values()) {
+            // 같은 이름의 회로가 레지스트리에 이미 있으면 설정을 무시하고 기존 회로를 돌려준다. 이 빈은 하나만 만든다는 전제다.
             CircuitBreaker breaker = registry.circuitBreaker(group.breaker, breakerConfig);
             // 이벤트 문자열에는 예외 문구가 들어갈 수 있어 이름과 상태만 남긴다.
             breaker.getEventPublisher().onStateTransition(e -> log.warn(
