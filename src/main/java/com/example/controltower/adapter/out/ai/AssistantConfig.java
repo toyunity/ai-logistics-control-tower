@@ -9,6 +9,8 @@ import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
@@ -131,7 +133,11 @@ public class AssistantConfig {
         }
     }
 
+    // 기본 옵션은 모델 종류에 맞춰야 한다. Claude 옵션을 Ollama에 넣으면 Claude 모델 이름이 그대로 넘어간다.
     static ChatOptions.Builder<?> options(ChatModel chatModel, String model, int maxTokens) {
+        if (chatModel instanceof OllamaChatModel) {
+            return OllamaChatOptions.builder().model(model).numPredict(maxTokens);
+        }
         return AnthropicChatOptions.builder()
                 .model(model)
                 .maxTokens(maxTokens)

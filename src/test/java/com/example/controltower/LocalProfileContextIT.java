@@ -2,6 +2,7 @@ package com.example.controltower;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.controltower.adapter.out.knowledge.KnowledgeSync;
 import com.example.controltower.support.TestInfraConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -14,14 +15,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-// 실행 중인 Ollama 없이도 뜬다. 모델 호출은 대화할 때만 일어난다.
+// 실행 중인 Ollama 없이도 뜬다. 모델 호출은 대화할 때만 일어난다. 기동 시 문서 임베딩은 실제 Gemini를 부르므로 막는다.
 @SpringBootTest
 @ActiveProfiles("local")
 @Import(TestInfraConfig.class)
 class LocalProfileContextIT {
 
     @Autowired ApplicationContext ctx;
+    @MockitoBean KnowledgeSync knowledgeSync;
 
     @Test
     void localProfileAnswersWithOllamaAndEmbedsWithGemini() {

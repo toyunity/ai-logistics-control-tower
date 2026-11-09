@@ -1,5 +1,6 @@
 spring:
   application.name: control-tower
+  autoconfigure.exclude: org.springframework.ai.model.ollama.autoconfigure.OllamaEmbeddingAutoConfiguration   # 켜 두면 Gemini와 임베딩 빈이 둘이 된다. 임베딩은 Gemini만 쓴다
   task.scheduling.pool.size: 4       # 기본값 1이면 느린 이벤트 전송이 시뮬레이터 틱과 감지까지 막는다
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/consult}
