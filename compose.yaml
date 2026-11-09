@@ -13,7 +13,7 @@ services:
     image: jaegertracing/jaeger:2.11.0
     profiles: [observability]
     ports:
-      - "16686:16686"                # 화면
-      - "4318:4318"                  # OTLP HTTP 수신
+      - "127.0.0.1:16686:16686"      # 화면. 같은 망의 다른 사람이 추적을 보지 못하게 이 컴퓨터에만 연다
+      - "127.0.0.1:4318:4318"        # OTLP HTTP 수신
 volumes:
   pgdata:

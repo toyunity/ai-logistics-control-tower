@@ -93,6 +93,8 @@ export MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:43
 
 `http://localhost:16686`에서 서비스 `control-tower`를 고릅니다. 데모 모드에서 operator로 로그인해 "CV-3 정비 요청 올려줘"를 보낸 뒤 Jaeger 조회 API로 확인했습니다. 추적 하나에 span 10개(이름 9종)가 있었습니다: `http post /api/chat/stream`, `spring_ai chat_client`, `message_chat_memory`, `retrieval_augmentation`, `pg_vector query`, `tool _calling `, `stream`, `execute_tool proposeMaintenance`, `controltower.command.propose`(태그 `kind=MAINTENANCE`, `outcome=PROPOSED`). 질문 문장은 그 추적 어디에도 없었습니다. 데모 모델은 계측되지 않아 모델 호출 span이 없습니다. 실제 Claude로는 확인하지 않았습니다. 화면 스크린샷은 남기지 않았습니다.
 
+5초 주기 감지가 읽는 설비 호출은 상위 요청이 없어 주기마다 별도 추적으로 남습니다. Jaeger 목록이 이것으로 차면 서비스 화면에서 작업 이름(`http post /api/chat/stream` 등)으로 걸러 보세요(코드로 판단, 재지 않음). Jaeger 포트는 이 컴퓨터(127.0.0.1)에만 열립니다.
+
 `docker compose up -d`만 하면 Jaeger는 뜨지 않습니다. actuator는 `/actuator/health`(상태만)와 `/actuator/metrics`만 열려 있고, 회로 상태는 `/actuator/metrics/resilience4j.circuitbreaker.state`에서 봅니다.
 
 ## 한계

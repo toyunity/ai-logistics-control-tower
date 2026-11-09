@@ -251,6 +251,9 @@ class ObservabilityIT {
         await().atMost(Duration.ofSeconds(10)).until(() -> spanNamed("controltower.command.propose") != null);
         tracerProvider.forceFlush().join(5, TimeUnit.SECONDS);
         List<SpanData> all = spans.getFinishedSpanItems();
+        // 아래 표식 검사가 빈 목록을 보고 통과하지 않게, 검색 요청의 span이 실제로 수집됐는지 먼저 본다.
+        assertThat(all).as(names(all).toString())
+                .anyMatch(s -> s.getKind() == SpanKind.SERVER && s.getName().contains("/api/knowledge/search"));
 
         SpanData proposeSpan = spanNamed("controltower.command.propose");
         List<SpanData> trace = all.stream().filter(s -> s.getTraceId().equals(proposeSpan.getTraceId())).toList();
