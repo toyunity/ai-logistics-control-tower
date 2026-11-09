@@ -203,6 +203,38 @@ class ToolLoopTest {
         assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
     }
 
+    // 인자 변환 실패는 도구 본문에 오기 전에 난다. 그래도 한도에 세지 않으면 모델이 끝없이 다시 부른다.
+    @Test
+    void malformedArgumentsForever_alsoEndAfterSixteenCalls(CapturedOutput output) {
+        String marker = "MALFORMED-FOREVER-MARKER";
+        for (int i = 1; i <= 40; i++) {
+            model.enqueueStream(Flux.just(toolCall("call-" + i, "getTimeline",
+                    "{\"equipmentId\":\"CV-3\",\"minutes\":\"" + marker + "\"}")));
+        }
+        // 세지 않으면 이 응답까지 와서 Done으로 끝난다. 멈추지 않는 대신 단언으로 실패하게 둔다.
+        model.enqueueStream(Flux.just(text("끝"), finish("end_turn")));
+        client = new AssistantConfig().assistantChatClient(
+                builders.getObject(), ChatClient.builder(model), memory, store, props, plantTools);
+
+        List<ChatEvent> events = run("계속 확인해");
+
+        assertThat(model.prompts()).hasSize(17);
+        assertThat(events).last().isInstanceOf(Failed.class);
+        assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
+    }
+
+    // 없는 도구 이름은 모델이 만든 값이다. 프레임워크 WARN과 예외 문구에 실려 로그로 새지 않는지 본다.
+    @Test
+    void unknownToolName_notLogged(CapturedOutput output) {
+        String marker = "UNKNOWN-TOOL-MARKER";
+        model.enqueueStream(Flux.just(toolCall("call-1", marker, "{}")));
+
+        List<ChatEvent> events = run("확인해");
+
+        assertThat(events).last().isInstanceOf(Failed.class);
+        assertThat(output.getOut() + output.getErr()).contains("chat stream failed").doesNotContain(marker);
+    }
+
     static class CountTool {
 
         @Tool(description = "개수 확인")

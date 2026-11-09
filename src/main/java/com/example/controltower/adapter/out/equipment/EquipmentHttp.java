@@ -13,6 +13,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.StreamReadFeature;
@@ -80,7 +81,10 @@ class EquipmentHttp {
             if (neverReached(e.getCause())) {
                 throw unavailable();
             }
-            throw new CommandOutcomeUnknownException("equipment command outcome unknown", null);
+            throw outcomeUnknown();
+        } catch (HttpServerErrorException e) {
+            // 502, 504처럼 게이트웨이나 프록시가 낸 응답일 수 있어 기기가 받았는지 모른다. 4xx는 기기의 거절로 본다.
+            throw outcomeUnknown();
         } catch (RuntimeException e) {
             throw unavailable();
         }
@@ -124,6 +128,10 @@ class EquipmentHttp {
             throw unavailable();
         }
         return "http://localhost:" + port;
+    }
+
+    private static CommandOutcomeUnknownException outcomeUnknown() {
+        return new CommandOutcomeUnknownException("equipment command outcome unknown", null);
     }
 
     private static GatewayUnavailableException unavailable() {

@@ -146,6 +146,23 @@ abstract class PendingCommandsContract {
         assertThat(subject().transition(otherAccount.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isTrue();
     }
 
+    // 우회는 모두 분류기 하나를, 재배정은 로봇 배차 하나를 거친다. 원본이 달라도 동시에 실행하지 않는다.
+    @Test
+    void oneExecutingPerSharedResource_divertsShareTheSorter_reassignsShareTheFleet() {
+        PendingCommand divert = saved("op-1", new CommandSpec.Divert("CH-03", "CH-04"));
+        PendingCommand sameDestination = saved("op-2", new CommandSpec.Divert("CH-01", "CH-04"));
+        PendingCommand otherChutes = saved("op-2", new CommandSpec.Divert("CH-05", "CH-06"));
+        PendingCommand reassign = saved("op-1", new CommandSpec.Reassign("AMR-01", "AMR-02"));
+        PendingCommand otherRobots = saved("op-2", new CommandSpec.Reassign("AMR-03", "AMR-04"));
+
+        assertThat(subject().transition(divert.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isTrue();
+        assertThat(subject().transition(reassign.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isTrue();
+
+        assertThat(subject().transition(sameDestination.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isFalse();
+        assertThat(subject().transition(otherChutes.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isFalse();
+        assertThat(subject().transition(otherRobots.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0)).isFalse();
+    }
+
     @Test
     void expiredCardDoesNotBlockANewProposal() {
         PendingCommand old = saved("op-1", RESTART);

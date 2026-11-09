@@ -101,7 +101,7 @@ PostgreSQL 하나에 둡니다. 제어 테이블은 `schema-control.sql`, 벡터
 
 | 테이블 | 내용 |
 |---|---|
-| `pending_commands` | 확인 카드. 상태(PENDING, EXECUTING, SUCCEEDED 등), 만료 시각, 제안 시점 상태 요약. 부분 유일 인덱스로 대상당 실행 중 1건 |
+| `pending_commands` | 확인 카드. 상태(PENDING, EXECUTING, SUCCEEDED 등), 만료 시각, 제안 시점 상태 요약. 부분 유일 인덱스로 실행 잠금 키(`lock_key`)당 실행 중 1건. 키는 우회 `SR-1`(분류기 공유), 재배정 `AMR-FLEET`(배차 공유), 재가동은 컨베이어, 정비는 설비 ID |
 | `command_audit` | 카드 상태 변화 기록 |
 | `equipment_events` | 설비 이벤트(코드만, 자유 문자열 없음). eventId로 중복 제거 |
 | `incidents` | 장애 건과 등급. 설비와 종류당 열린 건 1개 |

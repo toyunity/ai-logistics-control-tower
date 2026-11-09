@@ -145,6 +145,18 @@ class PersistenceIT {
                 .isEqualTo(1);
     }
 
+    @Test
+    void concurrentConfirmOfDivertsToOneDestination_oneWins() throws Exception {
+        PendingCommand fromCh03 = saved("op-1", new CommandSpec.Divert("CH-03", "CH-04"));
+        PendingCommand fromCh01 = saved("op-2", new CommandSpec.Divert("CH-01", "CH-04"));
+
+        assertThat(claimConcurrently(List.of(fromCh03, fromCh01))).containsOnlyOnce(true);
+
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from pending_commands where status = 'EXECUTING'", Long.class))
+                .isEqualTo(1);
+    }
+
     private List<Boolean> claimConcurrently(List<PendingCommand> cards) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         List<Future<Boolean>> claims = new ArrayList<>();
@@ -406,6 +418,27 @@ class PersistenceIT {
         new ResourceDatabasePopulator(new ClassPathResource("schema-control.sql")).execute(dataSource);
 
         assertThat(events.since(T0)).containsExactly(event);
+    }
+
+    // 실행 잠금 키가 생기기 전 스키마로 만든 DB에서 기동해도 키가 채워지고 이전 인덱스가 빠져야 한다.
+    @Test
+    void schemaScriptUpgradesATableWithoutLockKey() {
+        saved("op-1", new CommandSpec.Divert("CH-03", "CH-04"));
+        saved("op-1", new CommandSpec.Reassign("AMR-01", "AMR-02"));
+        saved("op-1", RESTART);
+        saved("op-1", new CommandSpec.Maintenance("SC-1", "점검"));
+        jdbc.execute("alter table pending_commands drop column lock_key");
+        jdbc.execute("create unique index pending_commands_one_executing"
+                + " on pending_commands (target_id) where status = 'EXECUTING'");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema-control.sql")).execute(dataSource);
+
+        assertThat(jdbc.queryForList("select kind || '=' || lock_key from pending_commands order by kind", String.class))
+                .containsExactly("DIVERT=SR-1", "MAINTENANCE=SC-1", "REASSIGN=AMR-FLEET", "RESTART=CV-3");
+        assertThat(jdbc.queryForList(
+                        "select indexname from pg_indexes where tablename = 'pending_commands' and indexname like '%executing%'",
+                        String.class))
+                .containsExactly("pending_commands_one_executing_lock");
     }
 
     // 수신 검증을 거치지 않은 행이 감지와 화면에 장치 원문을 흘리지 않게 DB도 같은 형식만 받는다.

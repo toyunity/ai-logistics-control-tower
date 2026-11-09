@@ -45,12 +45,13 @@ public class JdbcPendingCommands implements PendingCommands {
                     SqlTime.bind(c.createdAt()));
             jdbc.update(
                     "insert into pending_commands"
-                            + " (id, account_id, kind, target_id, spec, state_digest, impact, status, created_at, expires_at)"
-                            + " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            + " (id, account_id, kind, target_id, lock_key, spec, state_digest, impact, status, created_at, expires_at)"
+                            + " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     c.id(),
                     c.accountId(),
                     c.spec().kind().name(),
                     c.spec().targetId(),
+                    c.spec().lockKey(),
                     SpecJson.write(c.spec()),
                     c.stateDigest(),
                     c.impact(),
@@ -92,7 +93,7 @@ public class JdbcPendingCommands implements PendingCommands {
             return jdbc.update(sql.toString(), args.toArray()) == 1;
         }
         sql.append(" and not exists (select 1 from pending_commands e"
-                + " where e.target_id = pending_commands.target_id and e.status = 'EXECUTING')");
+                + " where e.lock_key = pending_commands.lock_key and e.status = 'EXECUTING')");
         // 동시 선점은 조건을 함께 통과해 유일 인덱스에서 갈린다. PostgreSQL은 위반한 트랜잭션 전체를 중단시키므로,
         // 세이브포인트로 되돌려 UnitOfWork가 false를 받고도 커밋할 수 있게 한다. catch가 execute 밖이어야 되돌려진다.
         try {

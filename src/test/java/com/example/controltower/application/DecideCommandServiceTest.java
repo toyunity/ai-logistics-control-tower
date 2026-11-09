@@ -50,11 +50,30 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.bridge.SLF4JBridgeHandler;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class DecideCommandServiceTest {
+
+    // 예외 문구에는 장치 응답이나 인자 값이 들 수 있어 로그에는 클래스 이름만 남는지 본다.
+    private static final String LOG_MARKER = "EXCEPTION-MESSAGE-MARKER";
+
+    // System.Logger는 JUL로 가고, 스프링 컨텍스트 없이 홀로 돌면 JUL 콘솔 핸들러가 캡처 전 stderr를 쥐고 있다.
+    // 운영처럼 SLF4J로 넘겨야 캡처가 매 테스트 출력을 본다.
+    @BeforeAll
+    static void bridgeJulToSlf4j() {
+        if (!SLF4JBridgeHandler.isInstalled()) {
+            SLF4JBridgeHandler.removeHandlersForRootLogger();
+            SLF4JBridgeHandler.install();
+        }
+    }
 
     private static final Instant NOW = Instant.parse("2026-11-07T00:00:00Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -352,12 +371,12 @@ class DecideCommandServiceTest {
     }
 
     @Test
-    void unexpectedExceptionDuringRecheck_failedNoSend() {
+    void unexpectedExceptionDuringRecheck_failedNoSend(CapturedOutput output) {
         PendingCommand card = card(DIVERT);
         Sorters broken = new Sorters() {
             @Override
             public SorterStatus get() {
-                throw new IllegalStateException("bug");
+                throw new IllegalStateException(LOG_MARKER);
             }
 
             @Override
@@ -370,6 +389,13 @@ class DecideCommandServiceTest {
 
         assertTerminal(card, result, Outcome.CONFLICT, CommandStatus.FAILED);
         assertThat(sends()).isZero();
+        assertClassNameOnlyLogged(output);
+    }
+
+    private static void assertClassNameOnlyLogged(CapturedOutput output) {
+        assertThat(output.getOut() + output.getErr())
+                .contains(IllegalStateException.class.getName())
+                .doesNotContain(LOG_MARKER);
     }
 
     @ParameterizedTest
@@ -413,10 +439,10 @@ class DecideCommandServiceTest {
 
     @ParameterizedTest
     @MethodSource("allKinds")
-    void unexpectedExceptionFromSend_unconfirmed(CommandSpec spec) {
+    void unexpectedExceptionFromSend_unconfirmed(CommandSpec spec, CapturedOutput output) {
         PendingCommand card = card(spec);
         afterAnySend(() -> {
-            throw new IllegalStateException("bug");
+            throw new IllegalStateException(LOG_MARKER);
         });
 
         CommandResult result = service.confirm(card.id(), OPERATOR);
@@ -424,6 +450,7 @@ class DecideCommandServiceTest {
         assertTerminal(card, result, Outcome.OK, CommandStatus.UNCONFIRMED);
         assertThat(sends()).isEqualTo(1);
         assertThat(result.message()).contains("현장");
+        assertClassNameOnlyLogged(output);
     }
 
     @ParameterizedTest
@@ -444,13 +471,13 @@ class DecideCommandServiceTest {
     }
 
     @Test
-    void unexpectedExceptionFromReadBack_unconfirmed() {
+    void unexpectedExceptionFromReadBack_unconfirmed(CapturedOutput output) {
         PendingCommand card = card(DIVERT);
         Sorters brokenAfterSend = new Sorters() {
             @Override
             public SorterStatus get() {
                 if (!sorters.commandIds().isEmpty()) {
-                    throw new IllegalStateException("bug");
+                    throw new IllegalStateException(LOG_MARKER);
                 }
                 return sorters.get();
             }
@@ -465,6 +492,7 @@ class DecideCommandServiceTest {
 
         assertTerminal(card, result, Outcome.OK, CommandStatus.UNCONFIRMED);
         assertThat(sends()).isEqualTo(1);
+        assertClassNameOnlyLogged(output);
     }
 
     @Test

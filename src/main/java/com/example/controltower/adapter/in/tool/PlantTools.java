@@ -21,14 +21,20 @@ import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.PendingCommand;
 import com.example.controltower.domain.RootCauseCandidate;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.support.ToolCallbacks;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.ai.tool.metadata.ToolMetadata;
+import org.springframework.ai.util.json.JsonParser;
 
 /** 도구는 예외를 던지지 않는다. 제안 도구는 대기 카드만 만들고, 계정은 인자가 아니라 TurnScope에서 읽는다. */
 public class PlantTools {
@@ -44,6 +50,40 @@ public class PlantTools {
     public PlantTools(PlantStatus status, ProposeCommand propose) {
         this.status = status;
         this.propose = propose;
+    }
+
+    /** 운영에 등록하는 콜백이다. 인자 변환은 메서드 본문 전에 실패하므로 한도는 콜백 단계에서 센다. */
+    public ToolCallback[] callbacks() {
+        return Arrays.stream(ToolCallbacks.from(this)).map(Counted::new).toArray(ToolCallback[]::new);
+    }
+
+    private record Counted(ToolCallback delegate) implements ToolCallback {
+
+        private static final String LIMIT = JsonParser.toJson(LIMIT_EXCEEDED);
+
+        @Override
+        public ToolDefinition getToolDefinition() {
+            return delegate.getToolDefinition();
+        }
+
+        @Override
+        public ToolMetadata getToolMetadata() {
+            return delegate.getToolMetadata();
+        }
+
+        @Override
+        public String call(String input) {
+            return delegate.call(input);
+        }
+
+        // 두 배를 넘으면 tryCount가 던지는 BudgetExhausted는 MethodToolCallback을 거치지 않아 그대로 턴을 끝낸다.
+        @Override
+        public String call(String input, ToolContext ctx) {
+            if (ctx != null && ctx.getContext().get(TurnScope.KEY) instanceof TurnScope scope && !scope.tryCount()) {
+                return LIMIT;
+            }
+            return delegate.call(input, ctx);
+        }
     }
 
     @Tool(description = "라인 전체 설비 상태와 열린 장애 건, 열린 정비 요청을 조회한다.")
@@ -118,9 +158,6 @@ public class PlantTools {
     private static ToolResults run(ToolContext ctx, Function<TurnScope, ToolResults> body) {
         if (ctx == null || !(ctx.getContext().get(TurnScope.KEY) instanceof TurnScope scope)) {
             return UNAVAILABLE;
-        }
-        if (!scope.tryCount()) {
-            return LIMIT_EXCEEDED;
         }
         try {
             return body.apply(scope);

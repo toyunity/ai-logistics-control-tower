@@ -9,12 +9,13 @@ import com.example.controltower.application.port.in.IngestEvent;
 import com.example.controltower.application.port.in.MaintenanceAdmin;
 import com.example.controltower.application.port.in.PlantStatus;
 import com.example.controltower.application.port.in.ProposeCommand;
-import com.example.controltower.application.port.in.TurnScope;
+import com.example.controltower.application.port.in.SearchKnowledge;
 import com.example.controltower.application.port.out.CommandAudit;
 import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.application.port.out.Conveyors;
 import com.example.controltower.application.port.out.EventLog;
 import com.example.controltower.application.port.out.Incidents;
+import com.example.controltower.application.port.out.KnowledgeSearch;
 import com.example.controltower.application.port.out.MaintenanceDesk;
 import com.example.controltower.application.port.out.PendingCommands;
 import com.example.controltower.application.port.out.RobotFleet;
@@ -28,6 +29,7 @@ import com.example.controltower.application.service.IngestEventService;
 import com.example.controltower.application.service.MaintenanceAdminService;
 import com.example.controltower.application.service.PlantStatusService;
 import com.example.controltower.application.service.ProposeCommandService;
+import com.example.controltower.application.service.SearchKnowledgeService;
 import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.SafetyLimits;
 import com.example.controltower.domain.SafetyPolicy;
@@ -43,7 +45,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.execution.ToolExecutionExceptionProcessor;
-import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.ai.util.json.JsonParser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -71,7 +72,7 @@ public class ServiceConfig {
 
     @Bean
     ToolCallbackProvider plantTools(PlantStatus status, ProposeCommand propose) {
-        return MethodToolCallbackProvider.builder().toolObjects(new PlantTools(status, propose)).build();
+        return ToolCallbackProvider.from(new PlantTools(status, propose).callbacks());
     }
 
     // 기본 처리기는 모델이 보낸 값이 든 예외 문구를 그대로 돌려준다. 예외 메시지에 인자 값이 들 수 있어 클래스 이름만 남긴다.
@@ -81,9 +82,6 @@ public class ServiceConfig {
         String unavailable = JsonParser.toJson(ToolResults.UNAVAILABLE);
         return e -> {
             Throwable cause = e.getCause();
-            if (cause instanceof TurnScope.BudgetExhausted stop) {
-                throw stop;
-            }
             log.warn("도구 실행 실패: {}", cause == null ? "null" : cause.getClass().getName());
             return cause instanceof JacksonException ? invalid : unavailable;
         };
@@ -168,6 +166,11 @@ public class ServiceConfig {
         public void close() {
             pool.shutdownNow();
         }
+    }
+
+    @Bean
+    SearchKnowledge searchKnowledge(KnowledgeSearch knowledge) {
+        return new SearchKnowledgeService(knowledge);
     }
 
     @Bean

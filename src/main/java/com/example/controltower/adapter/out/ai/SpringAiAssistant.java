@@ -39,7 +39,8 @@ public class SpringAiAssistant implements ControlAssistant {
                     .toolContext(Map.of(TurnScope.KEY, scope))
                     .stream()
                     .chatClientResponse()
-                    .concatMapIterable(r -> toChunks(r, retrievedSent));
+                    // concatMapIterable은 오류가 오면 대기 중인 청크를 버린다. 오류 직전 문장도 사용자에게 가야 한다.
+                    .concatMapDelayError(r -> Flux.fromIterable(toChunks(r, retrievedSent)));
         });
     }
 

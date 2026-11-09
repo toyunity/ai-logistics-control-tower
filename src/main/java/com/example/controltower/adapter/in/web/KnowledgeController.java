@@ -1,7 +1,6 @@
 package com.example.controltower.adapter.in.web;
 
-import com.example.controltower.application.port.out.KnowledgeHit;
-import com.example.controltower.application.port.out.KnowledgeSearch;
+import com.example.controltower.application.port.in.SearchKnowledge;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -12,14 +11,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class KnowledgeController {
 
-    private final KnowledgeSearch knowledgeSearch;
+    private final SearchKnowledge searchKnowledge;
 
-    public KnowledgeController(KnowledgeSearch knowledgeSearch) {
-        this.knowledgeSearch = knowledgeSearch;
+    public KnowledgeController(SearchKnowledge searchKnowledge) {
+        this.searchKnowledge = searchKnowledge;
     }
 
     @GetMapping("/api/knowledge/search")
-    List<KnowledgeHit> search(@RequestParam @NotBlank @Size(max = 500) String q) {
-        return knowledgeSearch.search(q);
+    List<SearchKnowledge.Hit> search(@RequestParam @NotBlank @Size(max = 500) String q) {
+        return searchKnowledge.search(q);
     }
 }

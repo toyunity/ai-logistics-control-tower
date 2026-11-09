@@ -50,6 +50,12 @@ class ArchitectureTest {
                             .or(resideInAPackage(ADAPTER).and(not(resideInAPackage(TOOL)))))
             .allowEmptyShould(true);
 
+    // 들어오는 어댑터는 port.in으로만 애플리케이션에 들어간다. 나가는 포트를 직접 부르면 서비스를 건너뛴다.
+    @ArchTest
+    static final ArchRule inboundAdaptersDoNotUseOutboundPorts = noClasses()
+            .that().resideInAPackage(ROOT + ".adapter.in..")
+            .should().dependOnClassesThat().resideInAPackage(ROOT + ".application.port.out..");
+
     // 시뮬레이터와 업무 코드는 HTTP로만 만난다.
     @ArchTest
     static final ArchRule simulatorIsolatedFromBusinessCode = CompositeArchRule

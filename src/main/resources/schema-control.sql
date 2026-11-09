@@ -3,6 +3,7 @@ create table if not exists pending_commands (
     account_id text not null,
     kind text not null,
     target_id text not null,
+    lock_key text not null,
     spec text not null,
     state_digest text not null,
     impact text not null,
@@ -10,8 +11,15 @@ create table if not exists pending_commands (
     created_at timestamptz not null,
     expires_at timestamptz not null
 );
-create unique index if not exists pending_commands_one_executing
-    on pending_commands (target_id) where status = 'EXECUTING';
+-- 이전 스키마에서 올라온 DB용이다. 값은 CommandSpec.lockKey()와 같아야 한다.
+alter table pending_commands add column if not exists lock_key text;
+update pending_commands
+    set lock_key = case kind when 'DIVERT' then 'SR-1' when 'REASSIGN' then 'AMR-FLEET' else target_id end
+    where lock_key is null;
+alter table pending_commands alter column lock_key set not null;
+create unique index if not exists pending_commands_one_executing_lock
+    on pending_commands (lock_key) where status = 'EXECUTING';
+drop index if exists pending_commands_one_executing;
 create unique index if not exists pending_commands_one_pending
     on pending_commands (account_id, kind, target_id) where status = 'PENDING';
 

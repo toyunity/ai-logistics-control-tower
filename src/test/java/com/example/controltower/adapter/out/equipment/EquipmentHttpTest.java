@@ -126,16 +126,30 @@ class EquipmentHttpTest {
         assertThat(EquipmentStub.field(stub.sent().getFirst(), "cmdId")).isEqualTo("c-1");
     }
 
-    // 기기가 답했으면 결과를 아는 것이다. 재시도도 없어야 한다.
+    // 4xx는 기기가 거절했거나 ID를 모른다고 답한 것이라 결과를 안다. 재시도도 없어야 한다.
     @ParameterizedTest
-    @ValueSource(ints = {302, 400, 404, 409, 500, 503})
-    void send_nonTwoHundred_isAPlainFailure_sentOnce(int status) {
+    @ValueSource(ints = {302, 400, 404, 409})
+    void send_refusedByTheDevice_isAPlainFailure_sentOnce(int status) {
         stub.reply("POST", DEVICE, status, "SECRET");
 
         assertPlainGatewayFailure(this::send);
 
         assertThat(stub.sent()).hasSize(1);
         assertThatThrownBy(this::send).hasNoCause().message().doesNotContain("SECRET");
+    }
+
+    // 5xx는 게이트웨이나 프록시가 낸 것일 수 있다(502, 504). 기기가 받았는지 모르므로 다시 보내지 않게 결과를 모른다고 본다.
+    @ParameterizedTest
+    @ValueSource(ints = {500, 502, 503, 504})
+    void send_serverError_isOutcomeUnknown_sentOnce(int status) {
+        stub.reply("POST", DEVICE, status, "SECRET");
+
+        assertThatThrownBy(this::send)
+                .isExactlyInstanceOf(CommandOutcomeUnknownException.class)
+                .hasNoCause()
+                .message().doesNotContain("SECRET");
+
+        assertThat(stub.sent()).hasSize(1);
     }
 
     @Test
