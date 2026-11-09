@@ -205,6 +205,38 @@ class EquipmentCircuitBreakerTest {
         assertThat(stub.sent()).isEmpty();
     }
 
+    // 열린 상태 대기 설정이 실제로 쓰이는지 본다. 하한만 단언하고 상한은 교착 감지용이다.
+    @Test
+    void openBreaker_staysShutForTheConfiguredWait_thenProbes() throws InterruptedException {
+        Duration wait = Duration.ofMillis(200);
+        EquipmentHttp shortWait = new EquipmentHttp(
+                new MockEnvironment().withProperty("controltower.equipment.base-url", stub.baseUrl()),
+                EquipmentStub.CONNECT_TIMEOUT,
+                EquipmentStub.READ_TIMEOUT,
+                CircuitBreakerRegistry.ofDefaults(),
+                EquipmentHttp.breakerConfig(WINDOW, 50, wait, 1));
+        stub.reply("GET", DEVICE, 503, "");
+        for (int i = 0; i < WINDOW; i++) {
+            assertPlainGatewayFailure(() -> shortWait.read(Group.SORTER, PATH, Wire.class, Wire::value, ID));
+        }
+        long opened = System.nanoTime();
+        countedReads(DEVICE, 200, "{\"value\":7}");
+
+        Integer value = null;
+        while (value == null && System.nanoTime() - opened < Duration.ofSeconds(10).toNanos()) {
+            try {
+                value = shortWait.read(Group.SORTER, PATH, Wire.class, Wire::value, ID);
+            } catch (RuntimeException e) {
+                assertThat(reads).hasValue(0);
+                Thread.sleep(20);
+            }
+        }
+
+        assertThat(value).isEqualTo(7);
+        assertThat(Duration.ofNanos(System.nanoTime() - opened)).isGreaterThanOrEqualTo(wait);
+        assertThat(reads).hasValue(1);
+    }
+
     @Test
     void stateChanges_logGroupAndStateOnly(CapturedOutput output) {
         failReadsUntilOpen();
