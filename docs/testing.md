@@ -6,15 +6,23 @@
 
 | 계층 | 테스트 | 쓰는 것 | 확인하는 것 |
 |---|---|---|---|
-| 단위 | `ChatServiceTest`, `DemoEmbeddingModelTest` | 가짜 모델, 메모리 저장소 | 이벤트 순서, 재작성, 메모리 내용, 장애 처리, 데모 검색 순위 |
-| 웹 슬라이스 | `ChatControllerTest`, `FaqControllerTest` | MockMvc | SSE 형식, 입력 검증, 로그에 입력이 남지 않음 |
-| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT` | 실제 설정 파일 | 키 누락 시 기동 실패, 빈 구성과 스키마 생성 |
-| 통합 | `FaqSyncIT`, `ChatStreamIT`, `DemoModeIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 연결 끊김, 동기화, 데모 전체 흐름 |
-| 저장소 | `PersistenceIT`, `InMemoryRepositoriesContractTest` | PostgreSQL 컨테이너, 메모리 대역 | 대역과 JDBC의 공통 계약, 동시 선점, 충돌 뒤 트랜잭션 커밋, 기동 정리 |
-| SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 타임아웃, 임베딩 입력 |
-| 실제 API | `LiveApiIT` | 실제 Claude, OpenAI | 요청 수락, 재작성 동작, 검색 품질 표 |
+| 도메인 | `SafetyPolicyTest`, `CascadeAnalyzerTest`, `SeverityPolicyTest`, `LineTopologyTest` | 순수 자바 | 안전 거절 사유, 원인 후보, 장애 등급 |
+| 애플리케이션 | `ProposeCommandServiceTest`, `DecideCommandServiceTest`, `DetectAnomaliesServiceTest`, `IngestEventServiceTest`, `PlantStatusServiceTest`, `StateDigestTest` | 메모리 대역 | 제안과 확정, 상태 재비교, 한 번만 전송, 결과 미확인 처리, 감지와 등급 갱신 |
+| 계약 | `*Contract`(설비 4종, 저장소 4종) | 메모리 대역, HTTP 어댑터, JDBC 어댑터가 같은 테스트를 통과 | 대역이 실제 어댑터와 같은 의미로 동작함 |
+| 설비 어댑터 | `VendorAConveyorsTest`, `VendorBSortersTest`, `FleetRobotsTest`, `SafetyPlcSignalsTest`, `EquipmentAdaptersSimulatorIT` | 로컬 HTTP 스텁, 시뮬레이터 | 제조사 형식 변환, 범위 밖 값과 타임아웃은 실패로 처리 |
+| 대화와 도구 | `AssistantPipelineTest`, `ToolLoopTest`, `PlantToolsTest`, `DemoIntentTest`, `DemoEmbeddingModelTest` | 가짜 모델 | 이벤트 순서, `action` 위치, 도구 반복, 잘못된 ID와 인자, 도구 한도, 데모 검색 순위 |
+| 웹 슬라이스 | `ChatControllerTest`, `CommandControllerTest`, `PlantControllerTest`, `EventControllerTest`, `MaintenanceControllerTest`, `KnowledgeControllerTest` | MockMvc | 응답 코드표, 권한(참관자, 다른 운영자, 세션 없음), 로그와 본문에 입력이 남지 않음 |
+| 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 도구 어댑터는 입력 포트만 호출 |
+| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개 |
+| 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 승자 하나, 이벤트 전송 |
+| 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
+| 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변 |
+| SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과 |
+| 실제 API | `LiveApiIT` | 실제 Claude, OpenAI | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
 
 ## 실행
+
+결과 파일은 `build/test-results/test/`에 `TEST-com.example.controltower...xml` 형식으로 남습니다.
 
 - `./gradlew test`: 전체 실행. Docker가 필요합니다. 비용은 들지 않습니다.
 - CI는 PR과 `main` 푸시마다 같은 명령을 실행합니다. 키가 없으므로 `LiveApiIT`는 건너뜁니다.
@@ -23,7 +31,7 @@
 ## 규칙
 
 - `*IT`는 Docker가 없으면 건너뛰지 않고 실패합니다. 조용히 건너뛴 테스트를 통과로 착각하지 않기 위해서입니다.
-- 시간 단언은 하한만 둡니다. 예를 들어 첫 `delta`와 `done` 사이의 간격이 일정 시간 이상인지로 버퍼링을 잡습니다.
+- 시간 단언은 하한만 둡니다. 상한은 교착을 잡는 용도로만 씁니다. 예를 들어 첫 `delta`와 `done` 사이의 간격이 일정 시간 이상인지로 버퍼링을 잡습니다.
 - SDK와 맞닿는 코드를 바꾸면 `RealBeansStubIT`에 검증을 추가합니다. 가짜 모델의 통과는 근거가 되지 않습니다.
 - 버그를 고칠 때는 고치기 전에 실패하는 테스트를 먼저 확인합니다.
 
@@ -31,7 +39,8 @@
 
 - 실제 Claude·OpenAI 호출과 실제 임베딩의 검색 품질
 - 실제 모드의 임계값 `0.4`
-- 실제 모델로 본 답변 품질과 화면 동작
+- 실제 모델의 도구 선택, 프롬프트 준수, 답변 품질
+- 실제 설비 프로토콜(지금은 제조사별 가상 HTTP)
 - 한글 IME 입력, 스크린 리더
 - 10분 타임아웃에서 실제로 끊기는 동작
 
