@@ -165,7 +165,7 @@
 
   let busy = false;
   let role = null;
-  let lastStatus = null; // 직전에 그린 상태 JSON(조회 시각 제외)
+  let lastStatus = null; // 직전에 그린 권한과 상태 JSON(조회 시각 제외)
   const pendingCards = [];
   const closing = new Set();
 
@@ -206,7 +206,6 @@
   async function login(accountId) {
     setBusy(true);
     role = null;
-    lastStatus = null; // 권한에 따라 정비 완료 버튼이 달라진다
     $('whoami').textContent = '로그인 중…';
     try {
       const res = await fetch('/api/session', {
@@ -495,7 +494,8 @@
       const s = await res.json();
       // 내용이 같으면 다시 그리지 않는다. 다시 그리면 버튼의 포커스와 누르던 클릭이 사라진다.
       const { at, ...content } = s;
-      const key = JSON.stringify(content);
+      // 정비 완료 버튼은 권한에 따라 달라지므로 권한도 비교한다.
+      const key = JSON.stringify([role, content]);
       if (key !== lastStatus) {
         renderStatus(s);
         lastStatus = key;
