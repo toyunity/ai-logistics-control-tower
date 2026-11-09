@@ -223,6 +223,18 @@ class ToolLoopTest {
         assertThat(output.getOut() + output.getErr()).doesNotContain(marker);
     }
 
+    // 없는 도구 이름은 모델이 만든 값이다. 프레임워크 WARN과 예외 문구에 실려 로그로 새지 않는지 본다.
+    @Test
+    void unknownToolName_notLogged(CapturedOutput output) {
+        String marker = "UNKNOWN-TOOL-MARKER";
+        model.enqueueStream(Flux.just(toolCall("call-1", marker, "{}")));
+
+        List<ChatEvent> events = run("확인해");
+
+        assertThat(events).last().isInstanceOf(Failed.class);
+        assertThat(output.getOut() + output.getErr()).contains("chat stream failed").doesNotContain(marker);
+    }
+
     static class CountTool {
 
         @Tool(description = "개수 확인")
