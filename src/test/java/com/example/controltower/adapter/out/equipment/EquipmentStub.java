@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.controltower.domain.GatewayUnavailableException;
 import com.sun.net.httpserver.HttpExchange;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -134,11 +137,20 @@ final class EquipmentStub implements AutoCloseable {
         return "http://127.0.0.1:" + server.getAddress().getPort();
     }
 
+    /** 계약 테스트는 실패를 여러 번 겪어도 회로가 열리지 않게 한다. 회로 동작은 http(config)로 따로 본다. */
     EquipmentHttp http() {
+        return http(EquipmentHttp.breakerConfig(100, 100, Duration.ofMinutes(1), 1));
+    }
+
+    /** 스텁마다 새 레지스트리를 써서 테스트 사이에 회로 상태가 새지 않게 한다. */
+    EquipmentHttp http(CircuitBreakerConfig breakerConfig) {
         return new EquipmentHttp(
                 new MockEnvironment().withProperty("controltower.equipment.base-url", baseUrl()),
                 CONNECT_TIMEOUT,
-                READ_TIMEOUT);
+                READ_TIMEOUT,
+                CircuitBreakerRegistry.ofDefaults(),
+                breakerConfig,
+                ObservationRegistry.NOOP);
     }
 
     /** CommandOutcomeUnknownException도 하위 타입이라 isInstanceOf로는 구분되지 않는다. */

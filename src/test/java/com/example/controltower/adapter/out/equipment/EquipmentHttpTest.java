@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.example.controltower.domain.CommandOutcomeUnknownException;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
@@ -13,6 +14,8 @@ import java.net.ServerSocket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import io.micrometer.observation.ObservationRegistry;
+import java.time.Duration;
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
@@ -26,6 +29,7 @@ class EquipmentHttpTest {
     private static final String PATH = "/device/{id}";
     private static final String DEVICE = "/device/1";
     private static final Object BODY = Map.of("cmdId", "c-1");
+    private static final EquipmentHttp.Group GROUP = EquipmentHttp.Group.CONVEYORS;
 
     record Wire(int value) {}
 
@@ -38,18 +42,25 @@ class EquipmentHttpTest {
     }
 
     private Integer read() {
-        return http.read(PATH, Wire.class, Wire::value, "1");
+        return http.read(GROUP, PATH, Wire.class, Wire::value, "1");
     }
 
     private void send() {
-        http.send(PATH, BODY, "1");
+        http.send(GROUP, PATH, BODY, "1");
     }
 
     private static EquipmentHttp httpAt(String baseUrl) {
+        return httpWith(new MockEnvironment().withProperty("controltower.equipment.base-url", baseUrl));
+    }
+
+    private static EquipmentHttp httpWith(MockEnvironment env) {
         return new EquipmentHttp(
-                new MockEnvironment().withProperty("controltower.equipment.base-url", baseUrl),
+                env,
                 EquipmentStub.CONNECT_TIMEOUT,
-                EquipmentStub.READ_TIMEOUT);
+                EquipmentStub.READ_TIMEOUT,
+                CircuitBreakerRegistry.ofDefaults(),
+                EquipmentHttp.breakerConfig(100, 100, Duration.ofMinutes(1), 1),
+                ObservationRegistry.NOOP);
     }
 
     private static String refusingUrl() throws IOException {
@@ -90,7 +101,7 @@ class EquipmentHttpTest {
         stub.hang("GET", DEVICE);
         assertPlainGatewayFailure(this::read);
 
-        assertPlainGatewayFailure(() -> httpAt(refusingUrl()).read(PATH, Wire.class, Wire::value, "1"));
+        assertPlainGatewayFailure(() -> httpAt(refusingUrl()).read(GROUP, PATH, Wire.class, Wire::value, "1"));
     }
 
     @Test
@@ -103,7 +114,7 @@ class EquipmentHttpTest {
             Function<Wire, Integer> failing = wire -> {
                 throw e;
             };
-            assertPlainGatewayFailure(() -> http.read(PATH, Wire.class, failing, "1"));
+            assertPlainGatewayFailure(() -> http.read(GROUP, PATH, Wire.class, failing, "1"));
         }
     }
 
@@ -178,7 +189,7 @@ class EquipmentHttpTest {
     void send_refusedConnection_isAPlainFailure() throws IOException {
         EquipmentHttp refused = httpAt(refusingUrl());
 
-        assertPlainGatewayFailure(() -> refused.send(PATH, BODY, "1"));
+        assertPlainGatewayFailure(() -> refused.send(GROUP, PATH, BODY, "1"));
     }
 
     @Test
@@ -201,8 +212,8 @@ class EquipmentHttpTest {
         stub.reply("GET", "/device/" + id, 200, "{\"value\":7}");
         stub.reply("POST", "/device/" + id, 200, "");
 
-        assertPlainGatewayFailure(() -> http.read(PATH, Wire.class, Wire::value, id));
-        assertPlainGatewayFailure(() -> http.send(PATH, BODY, id));
+        assertPlainGatewayFailure(() -> http.read(GROUP, PATH, Wire.class, Wire::value, id));
+        assertPlainGatewayFailure(() -> http.send(GROUP, PATH, BODY, id));
 
         assertThat(stub.sent()).isEmpty();
     }
@@ -211,13 +222,13 @@ class EquipmentHttpTest {
     void blankBaseUrl_usesTheServerPortKnownAtCallTime_noPortIsAGatewayFailure() {
         stub.reply("GET", DEVICE, 200, "{\"value\":7}");
         MockEnvironment env = new MockEnvironment().withProperty("controltower.equipment.base-url", " ");
-        EquipmentHttp loopback = new EquipmentHttp(env, EquipmentStub.CONNECT_TIMEOUT, EquipmentStub.READ_TIMEOUT);
+        EquipmentHttp loopback = httpWith(env);
 
-        assertPlainGatewayFailure(() -> loopback.read(PATH, Wire.class, Wire::value, "1"));
-        assertPlainGatewayFailure(() -> loopback.send(PATH, BODY, "1"));
+        assertPlainGatewayFailure(() -> loopback.read(GROUP, PATH, Wire.class, Wire::value, "1"));
+        assertPlainGatewayFailure(() -> loopback.send(GROUP, PATH, BODY, "1"));
 
         env.setProperty("local.server.port", stub.baseUrl().substring(stub.baseUrl().lastIndexOf(':') + 1));
 
-        assertThat(loopback.read(PATH, Wire.class, Wire::value, "1")).isEqualTo(7);
+        assertThat(loopback.read(GROUP, PATH, Wire.class, Wire::value, "1")).isEqualTo(7);
     }
 }

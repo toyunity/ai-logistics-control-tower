@@ -14,7 +14,16 @@
 - **모르면 막습니다.** 확정할 때 설비 상태를 다시 읽어 제안 시점과 다르거나, 안전 신호가 오래됐거나, 작업자가 구역에 있으면 보내지 않습니다.
 - **한 번만 보냅니다.** 동시에 눌러도 DB 제약이 하나만 통과시킵니다. 결과를 모르면 다시 보내지 않고 현장 확인을 요청합니다.
 
-Java 25, Spring Boot 4.1.2, Spring AI 2.0.2 · 답변 Claude, 임베딩 Gemini, 저장 PostgreSQL(pgvector) · 헥사고날 구조
+Java 25, Spring Boot 4.1.2(WebFlux), Spring AI 2.0.2 · 답변 Claude, 임베딩 Gemini, 저장 PostgreSQL(pgvector) · Resilience4j 서킷 브레이커, MCP(조회 전용), OpenTelemetry · 헥사고날 구조
+
+## 운영을 위해 넣은 것
+
+| 기술 | 왜 | 실행으로 잰 값 |
+|---|---|---|
+| WebFlux | 리액티브 스택을 요청부터 SSE까지 보여 주려고 골랐습니다. 동시 요청이 늘어도 요청 스레드 수가 고정되고, 블로킹 DB 호출은 이벤트 루프 밖에서 돕니다 | 현황 조회 동시 50건에서 요청 스레드 MVC 108~125개 → 이벤트 루프 10개. 처리량은 같음 |
+| 서킷 브레이커(Resilience4j) | 응답 없는 설비를 매번 기다리지 않고 바로 "알 수 없음"으로 막습니다. 열린 회로로는 명령을 보내지 않습니다 | 무응답 설비 조회 약 3초 → 회로가 열린 뒤 15ms 이하 |
+| MCP 서버(조회 전용) | 다른 AI 클라이언트에서도 같은 안전 규칙으로 현황을 볼 수 있습니다. 제안 도구는 열지 않습니다(신원이 없어 카드 주인을 정할 수 없음). 기본은 꺼짐, 켜면 토큰 필요 | 인코딩·매트릭스 경로 우회까지 401로 막는 것을 테스트로 고정 |
+| OpenTelemetry | 대화 → 도구 → 제안 → 설비 호출이 한 추적으로 이어집니다. 태그는 열거형만, 입력·예외 문구는 추적에 남기지 않습니다 | Jaeger에서 한 추적의 span 10개 확인, 추적을 켜도 처리 시간 차이는 잡음 수준 |
 
 ## 장면
 
@@ -55,11 +64,11 @@ http://localhost:8080 을 열고 "시뮬레이터 제어"에서 **슈트 만재*
 3. `CV-3 재가동해` → 거절(우회가 먼저)
 4. `CH-03을 CH-04로 우회해` → 카드 확정 → `CV-3 재가동해` → 카드 확정
 
-데모의 한계, 실제 API·로컬 모델로 실행하는 방법은 [실행과 운영](docs/operations.md)에 있습니다.
+추적을 보려면 `docker compose --profile observability up -d`로 Jaeger를 함께 띄웁니다. 데모의 한계, 실제 API·로컬 모델·MCP로 실행하는 방법은 [실행과 운영](docs/operations.md)에 있습니다.
 
 ## 구조
 
-규칙(도메인, 애플리케이션)은 바깥(설비, AI, DB)을 모릅니다. 설비 제조사나 모델을 바꿔도 "무엇을 보내도 되는가"는 바뀌지 않습니다.
+규칙(도메인, 애플리케이션)은 바깥(설비, AI, DB, 웹, 관측)을 모릅니다. 설비 제조사나 모델, 웹 스택을 바꿔도 "무엇을 보내도 되는가"는 바뀌지 않습니다. WebFlux 전환, MCP, 서킷 브레이커, 추적도 모두 어댑터와 설정에서만 이뤄졌고, 의존 방향은 [`ArchitectureTest`](src/test/java/com/example/controltower/ArchitectureTest.java)가 검사합니다.
 
 ```mermaid
 flowchart LR
@@ -67,6 +76,7 @@ flowchart LR
         WEB[web: 채팅 SSE, 확정, 현황, 이벤트]
         TOOL[tool: 모델이 부르는 도구 8개]
         SCH[schedule: 5초 감지]
+        MCP[mcp: 조회 도구 4개, 토큰]
     end
     subgraph CORE[애플리케이션 + 도메인]
         SVC[제안, 확정, 감지, 현황, 대화]
@@ -76,12 +86,13 @@ flowchart LR
         AI[ai: Claude]
         KN[knowledge: pgvector]
         PER[persistence: JDBC]
-        EQ[equipment: 제조사별 HTTP]
+        EQ[equipment: 제조사별 HTTP + 서킷 브레이커]
     end
     SIM[(시뮬레이터)]
     WEB --> SVC
     TOOL --> SVC
     SCH --> SVC
+    MCP --> SVC
     SVC --> DOM
     SVC --> AI
     SVC --> KN
@@ -106,8 +117,12 @@ flowchart LR
 
 ## 검증 상태
 
-- **실행으로 확인:** 전체 자동 테스트(928건), 데모 장면, 헤드리스 Chrome으로 본 화면 동작, 로컬 Ollama + 실제 Gemini로 실제 모델 검사(도구 선택, 인젝션 문장에 전송 0건, 검색 임계값 0.60 측정).
-- **확인하지 못함:** Claude 자체의 동작. 비용이 들어 아직 실행하지 않았습니다.
+- **실행으로 확인:**
+  - 전체 자동 테스트 996건(가짜 모델, 로컬 스텁, 시뮬레이터, PostgreSQL 컨테이너)
+  - 데모 장면, 헤드리스 Chrome으로 본 화면 동작
+  - 서킷 브레이커 측정, MCP 인증(우회 경로 포함), Jaeger로 본 한 줄 추적
+  - 로컬 Ollama + 실제 Gemini로 실제 모델 검사: 도구 선택, 인젝션 문장에 전송 0건, 검색 임계값 0.60 측정. 7B 로컬 모델은 답이 매번 달라 반복하면 일부 검사가 실패합니다(탐색용).
+- **확인하지 못함:** Claude 자체의 동작. 비용이 들어 아직 실행하지 않았습니다. Claude Desktop 같은 MCP 클라이언트 앱으로도 연결해 보지 않았습니다(MCP SDK 클라이언트로만 확인).
 
 자세한 내용과 한계는 [실행과 운영](docs/operations.md#검증-상태)에 있습니다.
 
@@ -116,7 +131,7 @@ flowchart LR
 - [구조](docs/architecture.md): 흐름 그림, 데이터, 프로필
 - [설계 결정](docs/decisions.md): 왜 이렇게 만들었는지와 그 대가
 - [API](docs/api.md): HTTP API와 SSE 이벤트
-- [실행과 운영](docs/operations.md): 실행 모드, 테스트, 지식 문서 수정, 한계, 검증 상세
+- [실행과 운영](docs/operations.md): 실행 모드, 테스트, 지식 문서 수정, Jaeger로 추적 보기, 한계, 검증 상세
 - [테스트 전략](docs/testing.md): 테스트 계층
 
 ## 라이선스

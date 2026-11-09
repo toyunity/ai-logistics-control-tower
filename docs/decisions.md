@@ -4,11 +4,22 @@
 
 ## 구조
 
-### WebFlux 대신 MVC에서 `Flux` 반환
+### MVC에서 WebFlux로 전환, 블로킹 호출은 `boundedElastic`으로
 
-- **이유:** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적습니다.
-- **근거:** MVC에서 `Flux<ServerSentEvent>`가 청크 단위로 전달되는 것을 실제 HTTP로 확인했습니다(`ChatStreamIT`).
-- **재검토:** 동시 연결이 많아져 스레드나 커넥션이 병목이 될 때.
+- **처음 결정:** pgvector와 대화 기록이 모두 블로킹 JDBC라 WebFlux로 얻을 것이 적다고 보고 MVC에서 `Flux<ServerSentEvent>`를 돌려줬습니다.
+- **바꾼 이유:** 리액티브 스택을 요청부터 SSE까지 끝까지 보여 주려고 일부러 골랐습니다. 꼭 필요해서 바꾼 것은 아닙니다. MCP 서버도 Spring AI 2.0.2 BOM에 `spring-ai-starter-mcp-server-webmvc`가 있어 MVC로 붙일 수 있었습니다. 아래 측정에서 처리량은 같았고, 얻은 것은 요청 스레드가 동시 요청 수를 따라 늘지 않고 이벤트 루프 수로 고정된 것 하나입니다. 코어(domain, application)는 동기 코드 그대로 두고 웹 어댑터만 바꿨습니다. 조회 단건 응답은 `Mono.fromCallable(...).subscribeOn(boundedElastic())`(`Blocking.call`), 상태를 바꾸는 요청(확정, 거절, 정비 완료, 이벤트 수신)은 `Blocking.runToCompletion`, 채팅은 `Flux.defer(...).subscribeOn(boundedElastic())`입니다. `subscribeOn`은 구독과 `request(n)`만 그 스레드로 옮깁니다. 청크가 온 뒤의 일(도구 실행, 완료 시 메모리 저장)은 SDK가 청크를 내보내는 스레드에서 돕니다. `ChatControllerTest`, `CommandControllerTest`, `KnowledgeControllerTest`가 서비스 대역이 `boundedElastic-` 스레드에서 불렸는지 확인합니다. `RealBeansStubIT`는 실제 Anthropic SDK 빈과 로컬 스텁으로 도구 실행과 메모리 저장이 Netty 스레드가 아닌 곳(실행 결과 `boundedElastic`)에서 도는지 확인합니다. Ollama(`local` 프로필)는 자동 구성 WebClient가 Reactor Netty를 써서 청크가 서버의 이벤트 루프(`webflux-http-nio-*`)에서 나오는 것을 `LocalOllamaStreamIT`로 확인했습니다. 메모리 저장은 그때도 `boundedElastic`이었지만, 청크 뒤에 붙는 일이 서버 루프를 같이 쓰지 않게 `LocalOllamaConfig`에서 Ollama만 JDK HTTP 커넥터로 받게 했습니다(전환 전 동작).
+- **대가:** JDBC와 설비 HTTP(RestClient)는 여전히 블로킹이라 스레드를 아낀 것이 아니라 Tomcat 요청 스레드에서 `boundedElastic` 풀로 옮긴 것입니다. 이 풀은 코어 수×10(이 머신 100개)이 상한이고, MVC에서도 채팅 중 이 풀이 100개까지 찼습니다(실행으로 관찰). 그래서 Spring AI 내부도 같은 풀을 쓴다고 봅니다(판단). 그래서 블로킹 작업 동시 실행 수가 그 상한에 묶이고 나머지는 큐에서 기다립니다. 취소 의미도 달라졌습니다. MVC에서는 클라이언트가 끊겨도 처리가 끝까지 갔지만, `subscribeOn`으로 넘긴 작업은 구독이 취소되면 Reactor가 작업 스레드를 인터럽트합니다. 확정 도중 인터럽트되면 커넥션 풀이 찬 상태에서 트랜잭션을 못 열어, 설비에 보낸 뒤 결과 기록이 실패하고 카드가 EXECUTING으로 남을 수 있었습니다(리뷰에서 재현했다고 보고됨. 이 저장소의 테스트는 인터럽트 여부만 확인). 그래서 상태를 바꾸는 요청은 `CompletableFuture`로 `boundedElastic`에 넘기고 `Mono.fromFuture(..., true)`로 취소를 전달하지 않아 끝까지 돌고 결과만 버립니다(`CommandControllerTest`의 연결 끊김 테스트). 정비 완료와 이벤트 수신은 저장 한 번이고(수신 뒤 감지는 별도 실행기로 넘깁니다) 중간 상태가 없어 끊겨도 저장 전이면 아무 일도 없을 뿐이지만(판단: 코드 읽기), 같은 규칙으로 두는 편이 단순해 함께 바꿨습니다. 조회는 인터럽트돼도 잃을 것이 없어 그대로 둡니다. 채팅은 끊기면 모델 호출을 멈추는 것이 맞고, `subscribeOn`으로 넘기는 일도 구독과 `request(n)`뿐이라 그대로 둡니다. 세션은 `InMemoryWebSessionStore`라 서버 재시작 시 사라지고, 기본 최대 세션 수가 10,000입니다(판단: 클래스의 기본값을 바이트코드로 확인, 넘쳤을 때 동작은 실행하지 않음).
+- **오류 로그:** MVC의 `DefaultHandlerExceptionResolver`처럼 거부된 입력을 WARN으로 남기는 처리기는 WebFlux에 없어 그 로그 설정을 지웠습니다(입력 오류 로그 테스트가 설정 없이 통과). 대신 WebFlux 기본 오류 처리기가 처리되지 않은 500을 요청 경로와 쿼리, 예외 문구째 ERROR로 남기는 것을 테스트로 확인해, 쿼리로 자유 문자열을 받는 지식 검색도 `WebErrors` 대상에 넣었습니다.
+- **측정(실행, 로컬 10코어, 가짜 모델, `WebStackMeasureIT`):** 같은 하네스를 전환 직전 커밋과 전환 후에 각각 두 번 돌렸습니다. 숫자는 서버 쪽 스레드 이름 접두사로 센 것입니다. SSE는 100ms마다 센 표본 중 최대이고, 현황 조회는 마지막 요청을 보낸 시점의 한 번 표본입니다. `http-nio`에는 Tomcat의 수락·폴러 스레드도 들어 있습니다.
+
+  | 조건 | MVC(Tomcat) | WebFlux(Netty) |
+  |---|---|---|
+  | SSE 200개 동시(각 약 10초), 표본 중 최대 스레드 | `http-nio` 21~22, `boundedElastic` 100 | 이벤트 루프 10, `boundedElastic` 100 |
+  | SSE 200개 완료 시간 | 12.4~12.5초 | 12.4~12.5초 |
+  | 현황 조회 1,000건(동시 50, 설비는 같은 프로세스 시뮬레이터), 마지막 요청 시점 스레드 | 847~1,035건/초, `http-nio` 108~125 | 823~1,007건/초, 이벤트 루프 10 |
+
+  처리량은 차이가 없고, 달라진 것은 동시 요청에 따라 늘던 요청 스레드가 이벤트 루프 10개로 고정된 것입니다. SSE는 MVC에서도 비동기로 처리돼 요청 스레드를 붙잡지 않았습니다. 두 스택 모두 `boundedElastic`이 상한(100)에 닿았습니다.
+- **재검토:** 블로킹 작업이 `boundedElastic` 상한에서 밀리기 시작할 때. 그때는 JDBC 호출을 가상 스레드 실행기로 옮기는 것을 먼저 봅니다. 리액티브 스택을 보여 줄 필요가 없어지면 MVC(가상 스레드)로 돌아가는 것도 후보입니다. 처리량 차이가 없었고, 취소 의미와 스레드 넘기기가 사라집니다.
 
 ### 메모리 advisor를 RAG보다 먼저 실행
 
@@ -123,7 +134,7 @@
 ### 한 번만 전송, 자동 재시도 없음
 
 - **이유:** 컨베이어 재가동은 두 번 나가면 안 됩니다. 같은 카드를 동시에 확정해도 DB의 조건부 UPDATE와 부분 유일 인덱스가 승자 하나만 남깁니다. 전송 뒤 결과를 확인하지 못하면 다시 보내지 않고 "결과 미확인(UNCONFIRMED)"으로 닫아 현장 확인을 요청합니다.
-- **응답 분류:** 연결 전에 실패한 것이 확실할 때(연결 거부, 연결 타임아웃 등)와 4xx(기기의 거절이나 모르는 ID)만 실패(FAILED)입니다. 5xx는 502, 504처럼 게이트웨이나 프록시가 낸 응답일 수 있어 기기가 받았는지 모르므로 읽기 타임아웃, 끊김과 같이 결과 미확인으로 봅니다(`EquipmentHttpTest`).
+- **응답 분류:** 연결 전에 실패한 것이 확실할 때(연결 거부, 연결 타임아웃 등), 4xx(기기의 거절이나 모르는 ID), 서킷 브레이커가 열려 보내지 않았을 때만 실패(FAILED)입니다. 5xx는 502, 504처럼 게이트웨이나 프록시가 낸 응답일 수 있어 기기가 받았는지 모르므로 읽기 타임아웃, 끊김과 같이 결과 미확인으로 봅니다(`EquipmentHttpTest`).
 - **근거:** 실제 PostgreSQL에서 경쟁 상황을 만들어 확인했습니다(`PersistenceIT`). 패자가 유일 인덱스에서 실패해도 같은 트랜잭션의 감사 기록이 남도록 세이브포인트를 씁니다.
 - **대가:** 일시적 통신 오류에도 사람이 한 번 더 확인해야 합니다. 전송 중 서버가 죽으면 그 명령은 다음 기동 때 웹 서버가 요청을 받기 전에 UNCONFIRMED로 정리되며, 그 전까지 같은 실행 잠금 키(우회는 분류기 전체, 재배정은 로봇 전체)의 새 명령은 막힙니다.
 
@@ -154,6 +165,15 @@
 - **근거(실행으로 측정):** 설비군 셋이 모두 응답하지 않을 때 현황 조회가 약 9.0초에서 약 3.0초로, 같은 조건의 이벤트 수신은 15ms 이하로 줄었습니다.
 - **대가:** 감지 작업은 실행 1건과 대기 1건만 두고 나머지는 버립니다. 장애 반영은 최악의 경우 다음 5초 주기까지 늦습니다.
 
+### 설비군마다 서킷 브레이커, 읽기와 전송이 한 회로
+
+- **이유:** 설비군 하나가 응답하지 않으면 현황 조회가 매번 읽기 타임아웃(3초)만큼 걸렸습니다. 설비군(컨베이어, 분류기, 로봇, 안전 PLC)마다 회로를 하나 두고, 열리면 호출하지 않고 바로 게이트웨이 장애로 처리합니다. 읽기는 기존 경로대로 UNKNOWN, 제안은 STATE_UNKNOWN·SAFETY_SIGNAL_UNKNOWN 거절이 되고, 전송은 나가지 않아 FAILED입니다. 게이트웨이가 죽으면 읽기와 전송이 함께 죽으므로 둘이 한 회로를 씁니다.
+- **실패로 세는 것:** 응답이 없을 때(연결 거부, 연결·읽기 타임아웃, 끊김)와 5xx뿐입니다. 4xx와 3xx는 기기가 답한 것이라 실패가 아니라 성공으로 기록되고, 형식이 어긋난 200 응답도 회로 밖에서 번역하므로 성공입니다(회로를 열어도 빨라지지 않습니다). 성공으로 기록되므로 실패율을 묽힙니다. 윈도 6건 중 타임아웃 2건과 거절(4xx) 4건이면 실패율 33%라 회로는 닫힌 채입니다. 결과 미확인(5xx, 읽기 타임아웃)은 실패로 세지만 재전송은 생기지 않습니다. 재시도는 어디에도 없습니다(`EquipmentCircuitBreakerTest`).
+- **설정(`controltower.equipment.circuit-breaker.*`):** 호출 수 기준 윈도 6건(최소 호출 수 6), 실패율 50%, 열린 상태 10초, 반열림 시험 호출 3건. 분류 규칙과 설정 생성은 `EquipmentHttp.breakerConfig` 한 곳이라 테스트와 운영이 같은 규칙을 씁니다.
+- **라이브러리:** `resilience4j-spring-boot4:2.4.0`. Boot 4.1.2에서 `ContextLoadsIT` 로그를 스타터 없이 돌린 것과 비교해 새 WARN·ERROR가 없었고, 전체 테스트가 통과했으며 그 로그에 "not eligible for getting processed" 경고가 없었습니다. 레지스트리 빈만 쓰고 회로 네 개는 코드에서 위 설정으로 만듭니다. 회로 상태 지표(`resilience4j.circuitbreaker.state`, 태그 `name`=설비군)는 actuator를 더하자 스타터가 Micrometer에 붙였습니다(`ObservabilityIT`). 스타터는 레지스트리에 들어온 회로마다 이벤트 버퍼를 다는 것으로 읽혔고(실행으로 확인하지 않음), 오류 이벤트에는 원래 예외(URL과 응답 본문이 들어감)가 남으므로 `circuitbreakerevents` 같은 actuator 끝점은 열지 않습니다.
+- **근거(실행으로 측정, `EquipmentBreakerMeasureIT`, `MEASURE_BREAKER=1`):** 분류기 게이트웨이만 응답하지 않고 감지는 끈 상태에서 `GET /api/plant/status`를 연달아 불렀습니다. 회로가 열리기 전 1~6번째 조회는 3,015~3,166ms였고, 6번째 실패로 열린 뒤 7·8번째는 15ms, 9ms였습니다. 분류기는 조회 한 번에 1건이라 최소 호출 수 6건을 채우는 데 조회 6번이 걸렸습니다. 컨베이어는 정상일 때 조회 한 번에 3건을 읽지만, 무응답이면 첫 호출에서 멈춰 실패가 1건만 쌓입니다. 그래서 무응답 게이트웨이는 설비군과 관계없이 조회 6번 뒤에 열립니다(코드로 확인, 컨베이어 쪽은 재지 않음).
+- **대가:** 운영에서는 5초 주기 감지도 같은 설비를 읽으므로 더 빨리 열릴 것으로 보지만 재지 않았습니다. 회복은 열린 상태 대기(10초)가 끝난 뒤의 시험 호출로만 알아챕니다. 측정에서 게이트웨이를 되살린 뒤 분류기가 UNKNOWN에서 벗어나기까지 10,075ms가 걸렸습니다. 그동안 현황은 UNKNOWN이고 그 설비군의 제안은 거절되며, 확정은 보내지 않고 FAILED로 닫힙니다. 반열림에서 시험 호출 3건이 다 쓰인 동안 온 확정도 보내지 않고 FAILED입니다. 사람이 다시 확정해야 합니다. 반열림 때 게이트웨이가 아직 죽어 있으면 시험 호출 하나하나가 읽기 타임아웃(3초)을 쓰므로, 반열림 한 번마다 느린 조회가 최대 3번 생깁니다.
+
 ### 도구 호출 수는 직접 센다
 
 - **이유:** Spring AI 2.0.2에도 `spring.ai.tools.limits.max-total-tool-calls`가 있지만, 한 턴 단위로 세고 한국어 고정 문구로 모델에게 알리기 위해 `TurnScope`에서 직접 셉니다(한 턴 8회).
@@ -164,6 +184,26 @@
 
 - **이유:** 모델이 형식이 틀린 인자를 보내면 Spring AI 기본 처리가 그 값을 담은 예외 문구를 도구 결과로 돌려주고 WARN 로그에도 남겼습니다(실행으로 확인). 고정 결과를 돌려주는 `ToolExecutionExceptionProcessor`를 두고 `MethodToolCallback` 로그 레벨을 ERROR로 올렸습니다. 모델이 없는 도구 이름을 부르면 `DefaultToolCallingManager`가 그 이름을 WARN으로 남기므로 이 클래스도 ERROR로 올렸습니다. 같은 실패를 `MessageAggregator`가 예외 문구째 ERROR로 남겨 이 로거는 껐습니다. 끄자 느린 스택 로그에 가려 있던 경쟁이 드러나 오류 직전 청크가 사라졌습니다(`ChatStreamIT` 3회 연속 실패). `SpringAiAssistant`의 `concatMapIterable`이 오류를 받으면 대기 중인 청크를 버리기 때문이라 `concatMapDelayError`로 바꿨습니다. 그리고 스트림 실패와 확정 실패 로그는 예외 클래스 이름만 남깁니다(`ToolLoopTest`, `DecideCommandServiceTest`에서 출력 캡처로 확인).
 - **대가:** 이 클래스들의 다른 진단도 보이지 않고, 예기치 못한 실패 로그에 스택과 문구가 없어 원인 추적은 클래스 이름과 카드 ID로 해야 합니다.
+
+### MCP는 조회 도구 네 개만, 기본은 꺼 두고 토큰으로 막는다
+
+- **이유:** 외부 에이전트가 현황을 직접 물을 수 있게 MCP 서버(`spring-ai-starter-mcp-server-webflux`, Streamable HTTP, `/mcp`)를 붙였습니다. 여는 도구는 `getPlantStatus`, `getEquipment`, `getTimeline`, `diagnose`뿐입니다. 제안 도구를 열지 않는 이유는 MCP 클라이언트에 화면 세션 같은 신원이 없어서입니다. 카드 주인을 정할 수 없으면 "AI는 제안만, 확정은 사람이 화면에서"라는 흐름이 성립하지 않습니다(카드를 만든 사람과 확정하는 사람을 이을 수 없음).
+- **구현:** 조회 도구는 채팅과 같은 `PlantTools` 메서드를 씁니다. 조회는 `TurnScope` 없이도 돌게 바꿨고, 제안은 여전히 `TurnScope`가 없으면 `UNAVAILABLE`입니다. `adapter.in.mcp.McpReadTools`가 이름 허용 목록으로 네 개만 골라 등록하고, 하나라도 빠지면 기동이 실패합니다. Spring AI의 자동 변환(`spring.ai.mcp.server.tool-callback-converter`)은 모든 `ToolCallbackProvider` 빈을 MCP에 여므로 껐습니다. 켜 두면 채팅용 제안 도구까지 열립니다(코드 읽기로 확인, 끈 뒤 목록이 정확히 네 개인 것을 `McpServerIT`로 확인).
+- **오류 형식:** `McpToolUtils`는 도구 예외 문구를 그대로 클라이언트에 돌려주고, SDK의 입력 스키마 검사는 검증기 문구(JVM 로캘에 따라 한국어로도 나옴)를 돌려줍니다(실행으로 확인). 스키마 검사를 끄고(`validateToolInputs(false)`) 예외는 채팅과 같은 `ToolExecutionExceptionProcessor`로 보내 `INVALID_ARGUMENT`/`UNAVAILABLE` 고정 결과만 나갑니다(`McpServerIT`).
+- **인증:** `controltower.mcp.enabled=false`가 기본이고, 이때는 MCP 서버 빈과 `/mcp` 경로가 없습니다(`spring.ai.mcp.server.enabled`를 같은 값에 묶음, `ContextLoadsIT`). 켜면 `MCP_TOKEN`이 비어 있을 때 기동이 실패하고, 요청은 `Authorization: Bearer <토큰>`이 맞아야 통과합니다. 비교는 SHA-256 해시끼리 상수 시간으로 하고, 실패는 고정 본문의 401입니다. 토큰과 헤더는 로그에 남기지 않습니다(`McpServerIT` 출력 캡처).
+- **토큰 검사를 라우터에 붙인 이유:** 처음에는 경로 문자열을 비교하는 WebFilter였는데, 라우터는 PathPattern으로 맞춰서(퍼센트 디코딩, `;` 매개변수 제거) `/mcp;a=b`, `/%6Dcp`가 토큰 없이 MCP 처리기에 닿았습니다(실행으로 확인). 그래서 스타터의 라우터 빈(`webFluxStreamableServerRouterFunction`)을 같은 이름으로 대신 등록하고 거기에 `HandlerFilterFunction`을 붙였습니다. 라우터가 고른 요청만 검사로 오므로 경로 해석 차이로 생기는 틈이 없습니다. 이 검사는 Streamable HTTP 라우터에만 있으므로 스타터만 켜지거나(`spring.ai.mcp.server.enabled`와 `controltower.mcp.enabled`가 다름) 다른 프로토콜(SSE, STATELESS)이면 기동을 막습니다(`McpSettingsGuard`). 스타터가 라우터 빈 이름을 바꾸면 토큰 없는 라우터가 다시 생길 수 있습니다. 그때는 `McpServerIT`의 401 시험이 실패해야 하지만, 두 라우터 중 어느 쪽이 먼저 맞는지에 기대므로 버전을 올릴 때 이름을 다시 확인합니다.
+- **대가:** 토큰 하나를 모든 MCP 클라이언트가 나눠 씁니다. 누가 물었는지 구분하지 못하고, 토큰이 새면 바꾸고 재기동해야 합니다. 호출 수 제한도 없어 조회가 몰리면 설비 게이트웨이 부하가 그대로 늘어납니다(서킷 브레이커가 막는 것은 장애 뒤뿐입니다). 채팅의 한 턴 8회 한도도 MCP에는 적용되지 않습니다. 실제 MCP 클라이언트 앱과의 연결은 확인하지 않았고, MCP Java SDK 클라이언트로만 확인했습니다.
+
+### OpenTelemetry 관측, 태그는 열거형만
+
+- **이유:** 대화 한 턴은 HTTP 요청, 메모리·RAG advisor, 모델 스트림, 도구 호출, 제안, 설비 읽기를 거칩니다. 느리거나 실패한 턴이 어디서 막혔는지 로그만으로는 잇기 어려워 추적 하나로 묶었습니다. Spring Boot 4의 `spring-boot-starter-opentelemetry`(Micrometer Tracing의 OTel 브리지, OTLP 내보내기)와 actuator를 씁니다.
+- **관측 지점:** `controltower.command.propose`(kind, outcome), `controltower.command.decide`(kind, outcome, status), `controltower.equipment.call`(group, operation, outcome). 앞의 둘은 `config.ObservedCommands`가 입력 포트를 감싸서, 설비 호출은 `EquipmentHttp`가 남깁니다. 코어(domain, application)는 Micrometer를 모르고 ArchUnit으로 고정했습니다. decide의 kind는 명령 종류가 아니라 CONFIRM/REJECT입니다(입력과 결과에 명령 종류가 없고, 알아내려면 DB를 한 번 더 읽어야 합니다). NOT_FOUND·FORBIDDEN이면 status는 NONE이라 남의 카드 상태가 지표로도 드러나지 않습니다.
+- **태그를 열거형으로만 두는 이유:** 태그는 지표 이름과 함께 시계열이 되고 추적 속성으로도 나갑니다. 카드 요약, 설비 ID(모델 인자에서 옴), 계정, 예외 문구를 넣으면 사용자 입력이 새고 시계열 수가 입력만큼 늘어납니다. 그래서 값은 열거형 이름(DenialCode, CommandStatus 등)과 고정 문자열뿐이고, 예외는 관측에 넘기지 않고 outcome=ERROR나 UNAVAILABLE로만 남깁니다(`ObservabilityIT`, `EquipmentCircuitBreakerTest`).
+- **내용 기록은 끔:** Spring AI의 프롬프트·응답·도구 내용 기록 옵션은 기본값도 false지만 `application.yaml`에 false로 고정했습니다. 그런데 이것만으로는 막히지 않았습니다(실행으로 확인). ① pgvector 검색 관측은 검색어 원문을 `db.vector.query.content` 속성으로 남기고 끄는 설정이 없어, 그 값을 빼는 관측 규칙(`QueryHidingObservationConvention`)을 등록했습니다. ② 추적 처리기는 예외 문구를 span 상태 설명에, 문구와 원인까지의 스택을 예외 이벤트에 넣습니다. 업스트림 오류 문구가 대화 클라이언트 span에 그대로 실렸습니다. 모든 `SpanExporter`를 감싸(`RedactingSpanExport`) 내보낼 때 예외는 타입만, 상태는 코드만 남깁니다. Jaeger로 가는 OTLP 내보내기도 감싸지는 것을 `RedactingSpanExportTest`로 확인합니다. 사용자 메시지, 정비 요약 인자, 형식이 틀린 도구 인자, 업스트림 오류 문구, 지식 검색어에 넣은 표식이 어떤 span 이름·속성·이벤트·상태, 지표 태그, 로그에도 없음을 `ObservabilityIT`로 확인합니다.
+- **한 추적으로 잇기:** `spring.reactor.context-propagation: auto`. 웹 어댑터가 서비스 호출을 `boundedElastic`으로 넘기면 이 설정 없이는 decide span이 HTTP 요청 추적에서 떨어집니다(`limited`로 바꿔 돌리면 `ObservabilityIT`의 해당 시험이 실패). 대화 턴은 Spring AI가 도구 실행까지 관측을 넘겨 주므로 이 설정과 관계없이 HTTP → chat_client → `execute_tool proposeMaintenance` → `controltower.command.propose`가 한 추적이었습니다. 현황 조회의 병렬 읽기는 가상 스레드 실행기를 `ContextExecutorService`로 감싸 호출한 쪽 추적에 붙입니다(감싸지 않으면 `ObservabilityIT`의 해당 시험이 실패).
+- **내보내기:** `management.opentelemetry.tracing.export.otlp.endpoint`(Boot 4 이름. `management.otlp.tracing.endpoint`는 4.0에서 오류 수준으로 폐기됨)를 설정할 때만 OTLP span 내보내기가 생깁니다. 스타터에 딸린 OTLP 메트릭 레지스트리는 기본값이 켜짐이라 수집기가 없어도 1분마다 `localhost:4318`로 보내므로 `management.otlp.metrics.export.enabled: false`로 껐습니다(끄기 전 빈이 있는 것을 `ObservabilityIT`가 실패로 보여 줌). 표본 비율은 1.0입니다(데모 규모).
+- **actuator:** `health`, `metrics`만 엽니다. 인증이 없어서 `env`, `configprops`, `beans`, 회로 이벤트(원래 예외를 담음) 끝점은 열지 않고, health는 세부와 구성 요소를 보이지 않습니다. Prometheus 레지스트리는 넣지 않아 `prometheus` 끝점도 없습니다. `metrics`는 인증 없이 지표 이름과 태그 값(위의 열거형, HTTP 경로 템플릿)을 보여 줍니다.
+- **대가:** 의존성이 늘었습니다(OTel SDK, OTLP 내보내기, okhttp 송신기, Micrometer Tracing, actuator). 예외 타입만 남기므로 추적에서 오류 원인 문구는 볼 수 없습니다. 측정(실행, `WebStackMeasureIT`, 현황 조회 1,000건·동시 50): 추적 켬(span 생성, 내보내기 없음) 1,277ms·1,244ms, `management.tracing.enabled=false` 1,253ms·1,241ms로 차이가 잡음 수준이었습니다. 내보내기까지 켠 부하는 재지 않았습니다. 실제 Claude 모델 span(`chat`)은 가짜·데모 모델이 계측되지 않아 확인하지 못했고, 그 속성에 내용이 없는지는 위 옵션과 코드 읽기에만 기댑니다. Gemini 임베딩 관측도 같습니다.
 
 ## 보안과 설정
 

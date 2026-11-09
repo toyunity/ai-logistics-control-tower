@@ -1,11 +1,7 @@
 package com.example.controltower.simulator.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.doThrow;
 
 import com.example.controltower.simulator.PlantSimulator;
 import com.example.controltower.simulator.SimSnapshot;
@@ -13,16 +9,19 @@ import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.test.json.JsonCompareMode;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
-@WebMvcTest(
+@WebFluxTest(
         controllers = {
             VendorAController.class,
             VendorBController.class,
@@ -31,6 +30,7 @@ import org.springframework.test.web.servlet.ResultActions;
             SimControlController.class
         },
         properties = "controltower.simulator.enabled=true")
+@ExtendWith(OutputCaptureExtension.class)
 class SimulatorWebTest {
 
     private static final Instant START = Instant.parse("2026-11-07T00:00:00Z");
@@ -43,8 +43,8 @@ class SimulatorWebTest {
         }
     }
 
-    @Autowired MockMvc mvc;
-    @Autowired PlantSimulator sim;
+    @Autowired WebTestClient client;
+    @MockitoSpyBean PlantSimulator sim;
 
     @BeforeEach
     void restoreInitialState() {
@@ -55,8 +55,16 @@ class SimulatorWebTest {
         return UUID.randomUUID().toString();
     }
 
-    private ResultActions postJson(String path, String body) throws Exception {
-        return mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body));
+    private WebTestClient.ResponseSpec postJson(String path, String body) {
+        return client.post().uri(path).contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange();
+    }
+
+    private WebTestClient.ResponseSpec get(String path) {
+        return client.get().uri(path).exchange();
+    }
+
+    private WebTestClient.ResponseSpec post(String path) {
+        return client.post().uri(path).exchange();
     }
 
     private void jam() {
@@ -76,74 +84,74 @@ class SimulatorWebTest {
     }
 
     @Test
-    void vendorA_readsRegistersOnly() throws Exception {
-        mvc.perform(get("/sim/vendor-a/plc/CV-3"))
-                .andExpect(status().isOk())
-                .andExpect(content().json("{\"registers\":[1,0,1]}", JsonCompareMode.STRICT));
+    void vendorA_readsRegistersOnly() {
+        get("/sim/vendor-a/plc/CV-3")
+                .expectStatus().isOk()
+                .expectBody().json("{\"registers\":[1,0,1]}", JsonCompareMode.STRICT);
     }
 
     @Test
-    void vendorA_stoppedConveyorReportsItsAlarm() throws Exception {
+    void vendorA_stoppedConveyorReportsItsAlarm() {
         jam();
 
-        mvc.perform(get("/sim/vendor-a/plc/CV-3"))
-                .andExpect(content().json("{\"registers\":[0,101,1]}", JsonCompareMode.STRICT));
+        get("/sim/vendor-a/plc/CV-3")
+                .expectBody().json("{\"registers\":[0,101,1]}", JsonCompareMode.STRICT);
     }
 
     @Test
-    void vendorA_unknownPlc_is404() throws Exception {
-        mvc.perform(get("/sim/vendor-a/plc/SR-1")).andExpect(status().isNotFound());
+    void vendorA_unknownPlc_is404() {
+        get("/sim/vendor-a/plc/SR-1").expectStatus().isNotFound();
         postJson("/sim/vendor-a/plc/CV-9/command", "{\"cmdId\":\"" + uuid() + "\",\"op\":1}")
-                .andExpect(status().isNotFound());
+                .expectStatus().isNotFound();
     }
 
     @Test
-    void vendorA_startOp_restarts() throws Exception {
+    void vendorA_startOp_restarts() {
         sim.start("worker-in-zone");
 
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\",\"op\":1}")
-                .andExpect(status().isOk());
+                .expectStatus().isOk();
 
         assertThat(cv3().run()).isEqualTo(1);
     }
 
     @Test
-    void vendorA_refusedDuringHold_is409() throws Exception {
+    void vendorA_refusedDuringHold_is409() {
         jam();
 
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\",\"op\":1}")
-                .andExpect(status().isConflict());
+                .expectStatus().isEqualTo(409);
 
         assertThat(cv3().run()).isZero();
     }
 
     @Test
-    void vendorA_otherOp_is400() throws Exception {
+    void vendorA_otherOp_is400() {
         sim.start("worker-in-zone");
 
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\",\"op\":2}")
-                .andExpect(status().isBadRequest());
+                .expectStatus().isBadRequest();
 
         assertThat(cv3().run()).isZero();
     }
 
     @Test
-    void vendorA_badBodies_are400_withoutEcho() throws Exception {
-        postJson("/sim/vendor-a/plc/CV-3/command", "{\"op\":1}").andExpect(status().isBadRequest());
-        postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\"}").andExpect(status().isBadRequest());
+    void vendorA_badBodies_are400_withoutEcho() {
+        postJson("/sim/vendor-a/plc/CV-3/command", "{\"op\":1}").expectStatus().isBadRequest();
+        postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"" + uuid() + "\"}").expectStatus().isBadRequest();
         postJson("/sim/vendor-a/plc/CV-3/command", "{\"cmdId\":\"secret-input\",\"op\":1}")
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string(""));
+                .expectStatus().isBadRequest()
+                .expectBody().isEmpty();
         postJson("/sim/vendor-a/plc/CV-3/command", "not json secret-input")
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string(""));
+                .expectStatus().isBadRequest()
+                .expectBody().isEmpty();
     }
 
     @Test
-    void vendorB_readsSorter() throws Exception {
-        mvc.perform(get("/sim/vendor-b/sorters/SR-1"))
-                .andExpect(status().isOk())
-                .andExpect(content().json("""
+    void vendorB_readsSorter() {
+        get("/sim/vendor-b/sorters/SR-1")
+                .expectStatus().isOk()
+                .expectBody().json("""
                         {"opStatus":"ACTV",
                          "lanes":[
                           {"laneNo":1,"grp":"A","fill":30,"cap":40,"rate":10,"st":"OK"},
@@ -152,124 +160,134 @@ class SimulatorWebTest {
                           {"laneNo":4,"grp":"A","fill":30,"cap":40,"rate":20,"st":"OK"},
                           {"laneNo":5,"grp":"B","fill":30,"cap":40,"rate":10,"st":"OK"},
                           {"laneNo":6,"grp":"B","fill":30,"cap":40,"rate":10,"st":"OK"}],
-                         "reroutes":[]}""", JsonCompareMode.STRICT));
+                         "reroutes":[]}""", JsonCompareMode.STRICT);
     }
 
     @Test
-    void vendorB_rerouteShowsUpAndClearsHold() throws Exception {
+    void vendorB_rerouteShowsUpAndClearsHold() {
         jam();
-        mvc.perform(get("/sim/vendor-b/sorters/SR-1"))
-                .andExpect(jsonPath("$.opStatus").value("HOLD"))
-                .andExpect(jsonPath("$.lanes[2].st").value("FULL"));
+        get("/sim/vendor-b/sorters/SR-1")
+                .expectBody().jsonPath("$.opStatus").isEqualTo("HOLD")
+                .jsonPath("$.lanes[2].st").isEqualTo("FULL");
 
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":4}")
-                .andExpect(status().isOk());
+                .expectStatus().isOk();
 
-        mvc.perform(get("/sim/vendor-b/sorters/SR-1"))
-                .andExpect(jsonPath("$.opStatus").value("ACTV"))
-                .andExpect(jsonPath("$.reroutes[0].src").value(3))
-                .andExpect(jsonPath("$.reroutes[0].dst").value(4));
+        get("/sim/vendor-b/sorters/SR-1")
+                .expectBody().jsonPath("$.opStatus").isEqualTo("ACTV")
+                .jsonPath("$.reroutes[0].src").isEqualTo(3)
+                .jsonPath("$.reroutes[0].dst").isEqualTo(4);
     }
 
     @Test
-    void vendorB_refusedReroute_is409_unknownSorter_is404_badBody_is400() throws Exception {
+    void vendorB_refusedReroute_is409_unknownSorter_is404_badBody_is400() {
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":3}")
-                .andExpect(status().isConflict());
-        mvc.perform(get("/sim/vendor-b/sorters/SR-2")).andExpect(status().isNotFound());
+                .expectStatus().isEqualTo(409);
+        get("/sim/vendor-b/sorters/SR-2").expectStatus().isNotFound();
         postJson("/sim/vendor-b/sorters/SR-2/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":4}")
-                .andExpect(status().isNotFound());
-        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"src\":3,\"dst\":4}").andExpect(status().isBadRequest());
+                .expectStatus().isNotFound();
+        postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"src\":3,\"dst\":4}").expectStatus().isBadRequest();
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"dst\":4}")
-                .andExpect(status().isBadRequest());
+                .expectStatus().isBadRequest();
     }
 
     @Test
-    void vendorB_unknownLane_is404_chainedReroute_is409() throws Exception {
+    void vendorB_unknownLane_is404_chainedReroute_is409() {
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":9}")
-                .andExpect(status().isNotFound());
+                .expectStatus().isNotFound();
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":0,\"dst\":4}")
-                .andExpect(status().isNotFound());
+                .expectStatus().isNotFound();
 
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":3,\"dst\":4}")
-                .andExpect(status().isOk());
+                .expectStatus().isOk();
         postJson("/sim/vendor-b/sorters/SR-1/reroutes", "{\"txn\":\"" + uuid() + "\",\"src\":4,\"dst\":5}")
-                .andExpect(status().isConflict());
+                .expectStatus().isEqualTo(409);
     }
 
     @Test
-    void fleet_readsRobots_socAsFraction() throws Exception {
+    void fleet_readsRobots_socAsFraction() {
         sim.start("robot-battery");
 
-        mvc.perform(get("/sim/fleet/robots"))
-                .andExpect(status().isOk())
-                .andExpect(content().json("""
+        get("/sim/fleet/robots")
+                .expectStatus().isOk()
+                .expectBody().json("""
                         [{"name":"AMR-01","mode":"AUTO","soc":0.82,"jobs":2,"maxJobs":4},
                          {"name":"AMR-02","mode":"CHARGING","soc":0.25,"jobs":2,"maxJobs":4},
                          {"name":"AMR-03","mode":"CHARGING","soc":0.25,"jobs":2,"maxJobs":4},
-                         {"name":"AMR-04","mode":"AUTO","soc":0.9,"jobs":2,"maxJobs":4}]""", JsonCompareMode.STRICT));
+                         {"name":"AMR-04","mode":"AUTO","soc":0.9,"jobs":2,"maxJobs":4}]""", JsonCompareMode.STRICT);
     }
 
     @Test
-    void fleet_reassign_movesJobs() throws Exception {
+    void fleet_reassign_movesJobs() {
         postJson("/sim/fleet/reassign", "{\"cmdId\":\"" + uuid() + "\",\"from\":\"AMR-02\",\"to\":\"AMR-01\"}")
-                .andExpect(status().isOk());
+                .expectStatus().isOk();
 
         assertThat(jobs("AMR-01")).isEqualTo(4);
         assertThat(jobs("AMR-02")).isZero();
     }
 
     @Test
-    void fleet_unknown404_refused409_badBody400() throws Exception {
+    void fleet_unknown404_refused409_badBody400() {
         postJson("/sim/fleet/reassign", "{\"cmdId\":\"" + uuid() + "\",\"from\":\"AMR-09\",\"to\":\"AMR-01\"}")
-                .andExpect(status().isNotFound());
+                .expectStatus().isNotFound();
         postJson("/sim/fleet/reassign", "{\"cmdId\":\"" + uuid() + "\",\"from\":\"AMR-01\",\"to\":\"AMR-09\"}")
-                .andExpect(status().isNotFound());
+                .expectStatus().isNotFound();
         postJson("/sim/fleet/reassign", "{\"cmdId\":\"" + uuid() + "\",\"from\":\"AMR-01\",\"to\":\"AMR-01\"}")
-                .andExpect(status().isConflict());
-        postJson("/sim/fleet/reassign", "{\"from\":\"AMR-02\",\"to\":\"AMR-01\"}").andExpect(status().isBadRequest());
+                .expectStatus().isEqualTo(409);
+        postJson("/sim/fleet/reassign", "{\"from\":\"AMR-02\",\"to\":\"AMR-01\"}").expectStatus().isBadRequest();
         postJson("/sim/fleet/reassign", "{\"cmdId\":\"" + uuid() + "\",\"to\":\"AMR-01\"}")
-                .andExpect(status().isBadRequest());
+                .expectStatus().isBadRequest();
     }
 
     @Test
-    void safety_readsZone_tsIsEpochMillisOfLastTick() throws Exception {
+    void safety_readsZone_tsIsEpochMillisOfLastTick() {
         Instant tick = START.plusSeconds(5);
         sim.tick(tick);
         sim.start("worker-in-zone");
 
-        mvc.perform(get("/sim/safety/zones/Z1"))
-                .andExpect(status().isOk())
-                .andExpect(content().json(
-                        "{\"estop\":0,\"presence\":1,\"ts\":" + tick.toEpochMilli() + "}", JsonCompareMode.STRICT));
+        get("/sim/safety/zones/Z1")
+                .expectStatus().isOk()
+                .expectBody().json(
+                        "{\"estop\":0,\"presence\":1,\"ts\":" + tick.toEpochMilli() + "}", JsonCompareMode.STRICT);
     }
 
     @Test
-    void safety_unknownZone_is404() throws Exception {
-        mvc.perform(get("/sim/safety/zones/Z9")).andExpect(status().isNotFound());
+    void safety_unknownZone_is404() {
+        get("/sim/safety/zones/Z9").expectStatus().isNotFound();
     }
 
     @Test
-    void safety_offline_is503() throws Exception {
+    void safety_offline_is503() {
         sim.start("safety-offline");
 
-        mvc.perform(get("/sim/safety/zones/Z1")).andExpect(status().isServiceUnavailable());
+        get("/sim/safety/zones/Z1").expectStatus().isEqualTo(503);
     }
 
     @Test
-    void scenario_startRepeatConflictUnknown() throws Exception {
-        mvc.perform(post("/sim/scenarios/chute-jam")).andExpect(status().isOk());
-        mvc.perform(post("/sim/scenarios/chute-jam")).andExpect(status().isOk());
-        mvc.perform(post("/sim/scenarios/robot-battery")).andExpect(status().isConflict());
-        mvc.perform(post("/sim/scenarios/no-such")).andExpect(status().isNotFound());
+    void scenario_startRepeatConflictUnknown() {
+        post("/sim/scenarios/chute-jam").expectStatus().isOk();
+        post("/sim/scenarios/chute-jam").expectStatus().isOk();
+        post("/sim/scenarios/robot-battery").expectStatus().isEqualTo(409);
+        post("/sim/scenarios/no-such").expectStatus().isNotFound();
     }
 
     @Test
-    void reset_restoresTheLine() throws Exception {
-        mvc.perform(post("/sim/scenarios/worker-in-zone")).andExpect(status().isOk());
+    void reset_restoresTheLine() {
+        post("/sim/scenarios/worker-in-zone").expectStatus().isOk();
 
-        mvc.perform(post("/sim/reset")).andExpect(status().isOk());
+        post("/sim/reset").expectStatus().isOk();
 
         assertThat(cv3().run()).isEqualTo(1);
-        mvc.perform(post("/sim/scenarios/robot-battery")).andExpect(status().isOk());
+        post("/sim/scenarios/robot-battery").expectStatus().isOk();
+    }
+
+    // WebFlux 기본 처리기는 처리되지 않은 500을 경로와 예외 문구째 남긴다. 경로에는 요청이 보낸 ID가 들어 있다.
+    @Test
+    void failure_500WithoutPathOrExceptionTextInLogs(CapturedOutput output) {
+        doThrow(new IllegalStateException("SECRET-SIM-STATE")).when(sim).snapshot();
+
+        get("/sim/vendor-a/plc/ID-MARKER").expectStatus().isEqualTo(500).expectBody().isEmpty();
+
+        assertThat(output.getOut() + output.getErr()).doesNotContain("SECRET-SIM-STATE").doesNotContain("ID-MARKER");
     }
 }

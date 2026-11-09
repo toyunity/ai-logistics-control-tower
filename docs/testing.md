@@ -11,13 +11,13 @@
 | 계약 | `*Contract`(설비 4종, 저장소 4종) | 메모리 대역, HTTP 어댑터, JDBC 어댑터가 같은 테스트를 통과 | 대역이 실제 어댑터와 같은 의미로 동작함 |
 | 설비 어댑터 | `VendorAConveyorsTest`, `VendorBSortersTest`, `FleetRobotsTest`, `SafetyPlcSignalsTest`, `EquipmentAdaptersSimulatorIT` | 로컬 HTTP 스텁, 시뮬레이터 | 제조사 형식 변환, 범위 밖 값과 타임아웃은 실패로 처리 |
 | 대화와 도구 | `AssistantPipelineTest`, `ToolLoopTest`, `PlantToolsTest`, `DemoIntentTest`, `DemoEmbeddingModelTest` | 가짜 모델 | 이벤트 순서, `action` 위치, 도구 반복, 잘못된 ID와 인자, 인자 변환 실패까지 세는 도구 한도, 모델이 만든 도구 이름이 로그에 남지 않음, 데모 검색 순위 |
-| 웹 슬라이스 | `ChatControllerTest`, `CommandControllerTest`, `PlantControllerTest`, `EventControllerTest`, `MaintenanceControllerTest`, `KnowledgeControllerTest` | MockMvc | 응답 코드표, 권한(참관자, 다른 운영자, 세션 없음), 로그와 본문에 입력이 남지 않음 |
-| 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 도구 어댑터는 입력 포트만 호출, 들어오는 어댑터는 출력 포트에 의존하지 않음 |
-| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT`, `ToolExceptionProcessorTest`, `DetectionThreadsTest` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개, 도구 예외의 고정 결과와 클래스 이름만 남는 로그, 종료 시 감지 스레드 정리 |
+| 웹 슬라이스 | `ChatControllerTest`, `CommandControllerTest`, `PlantControllerTest`, `EventControllerTest`, `MaintenanceControllerTest`, `KnowledgeControllerTest`, `SimulatorWebTest` | `@WebFluxTest`, WebTestClient | 응답 코드표, 권한(참관자, 다른 운영자, 세션 없음), 로그인 시 세션 ID 교체, 로그와 본문에 입력이 남지 않음, 서비스 호출이 `boundedElastic`에서 실행됨(채팅, 확정, 검색) |
+| 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 서블릿 API 사용 금지, 도구 어댑터는 입력 포트만 호출, 들어오는 어댑터는 출력 포트에 의존하지 않음 |
+| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT`(리액티브 컨텍스트로 뜨는지 포함), `ToolExceptionProcessorTest`, `DetectionThreadsTest` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개, 도구 예외의 고정 결과와 클래스 이름만 남는 로그, 종료 시 감지 스레드 정리 |
 | 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT`, `StaleCommandCleanupIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 실행 잠금 키당 승자 하나, 스키마 업그레이드, 이벤트 전송, 웹 서버 시작 전 기동 정리 |
 | 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
 | 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변, 참관자와 익명은 모든 제안이 권한 없음 |
-| SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과 |
+| SDK 경계 | `RealBeansStubIT`, `LocalOllamaStreamIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과, 도구 실행과 메모리 저장이 `boundedElastic`에서 돎, Ollama 청크와 메모리 저장이 Netty 스레드에서 돌지 않음 |
 | 실제 모델 | `LiveApiIT`, `LocalModelIT` (공통 `RealModelChecks`) | 실제 Claude와 Gemini, 또는 로컬 Ollama와 실제 Gemini | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
 
 ## 실행
@@ -37,7 +37,7 @@
 
 ## 검증하지 못한 것
 
-- 실제 Claude 호출(로컬 모델과 실제 Gemini로는 `LocalModelIT` 6건 통과)
+- 실제 Claude 호출. 로컬 모델과 실제 Gemini로 도는 `LocalModelIT`는 7B 모델이 매번 다르게 답해 반복하면 일부가 실패하므로, 회귀 기준이 아니라 탐색용입니다
 - 실제 모드의 임계값 `0.4`
 - 실제 모델의 도구 선택, 프롬프트 준수, 답변 품질
 - 실제 설비 프로토콜(지금은 제조사별 가상 HTTP)

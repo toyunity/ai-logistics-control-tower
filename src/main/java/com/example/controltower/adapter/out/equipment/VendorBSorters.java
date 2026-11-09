@@ -35,12 +35,15 @@ public class VendorBSorters implements Sorters {
 
     @Override
     public SorterStatus get() {
-        return http.read(SORTER, Sorter.class, VendorBSorters::translate);
+        return http.read(EquipmentHttp.Group.SORTER, SORTER, Sorter.class, VendorBSorters::translate);
     }
 
     @Override
     public void divert(UUID commandId, String fromChute, String toChute) {
-        http.send(SORTER + "/reroutes", new RerouteRequest(commandId, laneNo(fromChute), laneNo(toChute)));
+        http.send(
+                EquipmentHttp.Group.SORTER,
+                SORTER + "/reroutes",
+                new RerouteRequest(commandId, laneNo(fromChute), laneNo(toChute)));
     }
 
     private static int laneNo(String chuteId) {

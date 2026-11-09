@@ -9,6 +9,7 @@ flowchart LR
     subgraph IN[입력 어댑터]
         WEB[web<br/>채팅 SSE, 확정, 현황, 이벤트 수신]
         TOOL[tool<br/>PlantTools: 모델이 부르는 도구 8개]
+        MCP[mcp<br/>조회 도구 4개, 기본 꺼짐]
         SCH[schedule<br/>5초 주기 이상 감지]
     end
     subgraph CORE[애플리케이션과 도메인]
@@ -27,6 +28,7 @@ flowchart LR
 
     WEB --> PIN
     TOOL --> PIN
+    MCP --> PIN
     SCH --> PIN
     PIN --> SVC --> DOM
     SVC --> POUT
@@ -40,6 +42,7 @@ flowchart LR
 
 - 의존은 바깥에서 안쪽으로만 갑니다. `ArchitectureTest`가 이를 검사합니다.
 - 도구 어댑터는 입력 포트만 부릅니다. 확정 포트를 부를 수 있는 것은 웹의 확정 API뿐입니다.
+- MCP 어댑터는 같은 조회 도구 네 개만 `/mcp`로 엽니다. 제안 도구는 신원이 없어 열지 않습니다([설계 결정](decisions.md)).
 - 시뮬레이터는 같은 프로세스에서 돌지만 코드로는 참조하지 않고 HTTP로만 연결합니다. 실제 설비로 바꿀 때는 `adapter/out/equipment`만 바뀝니다.
 
 ## 흐름 1: 대화에서 제안, 사람이 확정

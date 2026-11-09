@@ -197,6 +197,18 @@ class PlantToolsTest {
         assertThat(scope.proposed()).isEmpty();
     }
 
+    // MCP 호출에는 TurnScope가 없다. 조회는 계정이 필요 없으니 그대로 돌고, 제안만 막힌다.
+    @Test
+    void readsWithoutScope_ok_proposalsStillUnavailable() {
+        when(status.equipment("CV-3")).thenReturn(Optional.of(new EquipmentView("CV-3", "CONVEYOR", RunState.RUNNING, Map.of())));
+        var noScope = new ToolContext(Map.of("exchange", "x"));
+
+        assertThat(callJson("getEquipment", "{\"id\":\"CV-3\"}", noScope)).contains("\"status\":\"OK\"");
+        assertThat(callJson("getEquipment", "{\"id\":\"cv3\"}", noScope)).contains("\"status\":\"NOT_FOUND\"");
+        assertThat(callJson("proposeRestart", "{\"conveyorId\":\"CV-3\"}", noScope)).contains("\"status\":\"UNAVAILABLE\"");
+        assertThat(proposedSpecs).isEmpty();
+    }
+
     @Test
     void missingScope_unavailable() {
         assertThat(tools.proposeRestart("CV-3", new ToolContext(Map.of("other", "x")))).isEqualTo(ToolResults.UNAVAILABLE);

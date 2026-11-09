@@ -47,7 +47,7 @@ import reactor.core.publisher.Flux;
 @ExtendWith(OutputCaptureExtension.class)
 class ChatStreamIT {
 
-    // h2c 스트림 리셋이 아니라 Tomcat이 알아챌 수 있는 TCP 종료가 되도록 HTTP/1.1을 쓴다.
+    // h2c 스트림 리셋이 아니라 서버가 알아챌 수 있는 TCP 종료가 되도록 HTTP/1.1을 쓴다.
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
     @LocalServerPort int port;

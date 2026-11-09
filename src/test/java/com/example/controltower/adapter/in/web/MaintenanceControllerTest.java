@@ -1,9 +1,6 @@
 package com.example.controltower.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.controltower.application.port.in.MaintenanceAdmin;
 import com.example.controltower.application.service.MaintenanceAdminService;
@@ -11,18 +8,16 @@ import com.example.controltower.support.InMemoryMaintenanceDesk;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
-@WebMvcTest({MaintenanceController.class, SessionController.class})
+@WebFluxTest({MaintenanceController.class, SessionController.class})
 @Import(MaintenanceControllerTest.Wiring.class)
 class MaintenanceControllerTest {
 
@@ -40,21 +35,22 @@ class MaintenanceControllerTest {
         }
     }
 
-    @Autowired MockMvc mvc;
+    @Autowired WebTestClient client;
     @Autowired InMemoryMaintenanceDesk desk;
 
-    private final MockHttpSession session = new MockHttpSession();
+    private SessionCookie session;
 
-    private void login(String accountId) throws Exception {
-        mvc.perform(post("/api/session")
-                        .session(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"accountId\":\"" + accountId + "\"}"))
-                .andExpect(status().isOk());
+    @BeforeEach
+    void newSession() {
+        session = new SessionCookie(client);
     }
 
-    private ResultActions close(UUID id) throws Exception {
-        return mvc.perform(post("/api/maintenance/{id}/close", id).session(session));
+    private void login(String accountId) {
+        session.loginOk(accountId);
+    }
+
+    private WebTestClient.ResponseSpec close(UUID id) {
+        return session.with(client.post().uri("/api/maintenance/{id}/close", id)).exchange();
     }
 
     private boolean isOpen(UUID id) {
@@ -62,38 +58,38 @@ class MaintenanceControllerTest {
     }
 
     @Test
-    void operatorCloses_200() throws Exception {
+    void operatorCloses_200() {
         UUID id = desk.open("CV-" + UUID.randomUUID(), "벨트 점검", Instant.now());
         login("operator");
 
-        close(id).andExpect(status().isOk()).andExpect(jsonPath("$.message").isString());
+        close(id).expectStatus().isOk().expectBody().jsonPath("$.message").isNotEmpty();
 
         assertThat(isOpen(id)).isFalse();
     }
 
     @Test
-    void viewer_403() throws Exception {
+    void viewer_403() {
         UUID id = desk.open("CV-" + UUID.randomUUID(), "벨트 점검", Instant.now());
         login("viewer");
 
-        close(id).andExpect(status().isForbidden());
+        close(id).expectStatus().isForbidden();
 
         assertThat(isOpen(id)).isTrue();
     }
 
     @Test
-    void anonymous_403() throws Exception {
+    void anonymous_403() {
         UUID id = desk.open("CV-" + UUID.randomUUID(), "벨트 점검", Instant.now());
 
-        close(id).andExpect(status().isForbidden());
+        close(id).expectStatus().isForbidden();
 
         assertThat(isOpen(id)).isTrue();
     }
 
     @Test
-    void unknownOrClosed_404() throws Exception {
+    void unknownOrClosed_404() {
         login("operator");
 
-        close(UUID.randomUUID()).andExpect(status().isNotFound());
+        close(UUID.randomUUID()).expectStatus().isNotFound();
     }
 }

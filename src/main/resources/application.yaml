@@ -31,9 +31,26 @@ spring:
       id-type: TEXT                 # 기본값 UUID이면 "refund-policy" 같은 ID가 실패한다
       dimensions: 1536
     chat.memory.repository.jdbc.initialize-schema: always
+    mcp.server:
+      enabled: ${controltower.mcp.enabled}   # 끄면 MCP 서버 빈과 /mcp 경로가 아예 없다
+      name: control-tower
+      protocol: STREAMABLE           # 엔드포인트는 기본값 /mcp(streamable-http.mcp-endpoint)
+      tool-callback-converter: false # 켜면 모든 ToolCallbackProvider(채팅의 제안 도구 포함)를 MCP에 연다. 조회 도구는 McpConfig가 직접 등록한다
+    # 프롬프트, 응답, 도구 인자와 결과, 검색 결과를 로그나 추적에 남기는 옵션. 기본값도 false지만 사용자 입력이 새지 않게 고정한다
+    chat.observations: {log-prompt: false, log-completion: false, include-error-logging: false}
+    chat.client.observations: {log-prompt: false, log-completion: false}
+    tools.observations.include-content: false
+    vectorstore.observations.log-query-response: false
     chat.client.tool-calling.advisor-order: 20   # 기본값은 메모리(0)와 RAG(10) 바깥이라 도구 반복마다 검색과 재작성이 다시 돈다
-server.servlet.session.cookie.same-site: lax   # 다른 사이트에서 보낸 확정 POST에 세션 쿠키가 실리지 않게 한다
-logging.level.org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR   # WARN은 거부된 사용자 입력을 그대로 남긴다
+  reactor.context-propagation: auto   # Reactor 컨텍스트의 관측을 스레드로 옮겨 대화, 도구, 제안이 한 추적으로 이어진다
+server.reactive.session.cookie.same-site: lax   # 다른 사이트에서 보낸 확정 POST에 세션 쿠키가 실리지 않게 한다. WebFlux 기본값도 Lax지만 의도를 고정한다
+management:
+  endpoints.web.exposure.include: health,metrics   # 인증이 없어 env, configprops, 회로 이벤트(원래 예외 문구를 담는다)는 열지 않는다
+  endpoint.health:
+    show-details: never
+    show-components: never
+  tracing.sampling.probability: 1.0   # 데모 규모라 모두 남긴다. 내보내기는 management.opentelemetry.tracing.export.otlp.endpoint를 설정할 때만 한다
+  otlp.metrics.export.enabled: false  # 켜 두면 수집기가 없어도 1분마다 localhost:4318로 보낸다
 logging.level.org.springframework.ai.tool.method.MethodToolCallback: ERROR   # 인자 변환 실패 WARN이 모델이 보낸 인자 값을 그대로 남긴다
 logging.level.org.springframework.ai.model.tool.DefaultToolCallingManager: ERROR   # 없는 도구 WARN이 모델이 만든 도구 이름을 그대로 남긴다
 logging.level.org.springframework.ai.chat.model.MessageAggregator: OFF   # 스트림 실패를 예외 문구째 ERROR로 남긴다. 실패는 AssistantChatService가 클래스 이름으로 남긴다
@@ -47,6 +64,14 @@ controltower:
   stream-idle-timeout: 60s          # 첫 청크까지의 대기와 청크 사이 침묵 한도. 총 시간 한도는 spring.ai.anthropic.timeout
   cutoff: "18:00"                   # 출고 마감 시각(서버 시간대). 가상의 값이며 장애 등급 계산에 쓴다
   detection.enabled: true           # 5초 주기 감지. 끄면 이벤트 수신 때만 감지한다
+  equipment.circuit-breaker:         # 설비군(컨베이어, 분류기, 로봇, 안전 PLC)마다 하나. 읽기와 명령 전송이 같은 회로를 쓴다
+    sliding-window-size: 6            # 최근 6건(최소 호출 수도 6)을 본다. 무응답이면 어느 설비군이든 조회 한 번에 실패 1건이라 조회 6번(약 18초) 뒤 열린다
+    failure-rate-threshold: 50        # %. 실패는 연결 실패, 타임아웃, 5xx뿐이다. 4xx는 성공으로 기록돼 실패율을 묽힌다
+    wait-in-open-state: 10s           # 이 동안은 설비가 회복돼도 UNKNOWN이고 명령은 보내지 않는다. 감지 주기(5초) 두 번
+    half-open-calls: 3                # 회복됐으면 컨베이어 조회 한 번(3건)으로 끝난다. 아직 죽어 있으면 남은 시험 호출을 다음 조회들이 타임아웃(3초)씩 쓰며 소모한다
+  mcp:
+    enabled: false                  # 켜면 /mcp에서 조회 도구 네 개를 MCP로 연다. 제안 도구는 열지 않는다
+    token: ${MCP_TOKEN:}             # 켰는데 비어 있으면 기동이 실패한다. Authorization: Bearer <토큰>
   simulator:
     enabled: true
     event-target: ""                # 비우면 실행 중인 서버 자신의 포트로 보낸다

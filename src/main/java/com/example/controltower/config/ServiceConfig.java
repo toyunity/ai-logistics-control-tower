@@ -33,6 +33,8 @@ import com.example.controltower.application.service.SearchKnowledgeService;
 import com.example.controltower.domain.LineTopology;
 import com.example.controltower.domain.SafetyLimits;
 import com.example.controltower.domain.SafetyPolicy;
+import io.micrometer.context.ContextExecutorService;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalTime;
@@ -58,7 +60,8 @@ public class ServiceConfig {
     private static final Duration CARD_TTL = Duration.ofMinutes(2);
     private static final SafetyLimits SAFETY_LIMITS = new SafetyLimits(Duration.ofSeconds(3), 30);
     // 설비 읽기는 타임아웃까지 블로킹하므로 요청이 몰려도 스레드가 모자라지 않게 가상 스레드를 쓴다.
-    private static final Executor PLANT_READS = Executors.newVirtualThreadPerTaskExecutor();
+    // 감싸야 병렬 읽기의 관측이 호출한 쪽 추적에 붙는다. 안 감싸면 읽기마다 따로 떨어진 추적이 생긴다.
+    private static final Executor PLANT_READS = ContextExecutorService.wrap(Executors.newVirtualThreadPerTaskExecutor());
 
     @Bean
     Clock clock() {
@@ -109,9 +112,10 @@ public class ServiceConfig {
             PendingCommands pending,
             MaintenanceDesk desk,
             UnitOfWork unitOfWork,
-            Clock clock) {
-        return new ProposeCommandService(conveyors, sorters, fleet, safety, pending, desk, unitOfWork,
-                new SafetyPolicy(SAFETY_LIMITS), LineTopology.DEFAULT, clock, CARD_TTL);
+            Clock clock,
+            ObservationRegistry observations) {
+        return new ObservedCommands.Propose(new ProposeCommandService(conveyors, sorters, fleet, safety, pending, desk,
+                unitOfWork, new SafetyPolicy(SAFETY_LIMITS), LineTopology.DEFAULT, clock, CARD_TTL), observations);
     }
 
     @Bean
@@ -124,9 +128,10 @@ public class ServiceConfig {
             MaintenanceDesk desk,
             CommandAudit audit,
             UnitOfWork unitOfWork,
-            Clock clock) {
-        return new DecideCommandService(conveyors, sorters, fleet, safety, pending, desk, audit, unitOfWork,
-                new SafetyPolicy(SAFETY_LIMITS), LineTopology.DEFAULT, clock);
+            Clock clock,
+            ObservationRegistry observations) {
+        return new ObservedCommands.Decide(new DecideCommandService(conveyors, sorters, fleet, safety, pending, desk,
+                audit, unitOfWork, new SafetyPolicy(SAFETY_LIMITS), LineTopology.DEFAULT, clock), observations);
     }
 
     // 스케줄러와 수신이 같은 인스턴스의 잠금을 써야 감지 주기가 겹치지 않는다. 그래서 수신은 이 빈을 주입받는다.

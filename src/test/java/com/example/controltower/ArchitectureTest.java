@@ -21,6 +21,7 @@ class ArchitectureTest {
     private static final String APPLICATION = ROOT + ".application..";
     private static final String ADAPTER = ROOT + ".adapter..";
     private static final String TOOL = ROOT + ".adapter.in.tool..";
+    private static final String MCP = ROOT + ".adapter.in.mcp..";
     private static final String SIMULATOR = ROOT + ".simulator..";
 
     // domain과 application 규칙에 allowEmptyShould를 두지 않는다.
@@ -37,6 +38,12 @@ class ArchitectureTest {
             .should().onlyDependOnClassesThat()
             .resideInAnyPackage(APPLICATION, DOMAIN, "java..", "reactor.core..");
 
+    // 관측은 config의 데코레이터와 어댑터에서 한다. 위 규칙이 이미 막지만 의도를 따로 고정한다.
+    @ArchTest
+    static final ArchRule coreHasNoTelemetry = noClasses()
+            .that().resideInAnyPackage(DOMAIN, APPLICATION)
+            .should().dependOnClassesThat().resideInAnyPackage("io.micrometer..", "io.opentelemetry..");
+
     @ArchTest
     static final ArchRule adaptersDoNotReferenceEachOther = slices()
             .matching(ROOT + ".adapter.(*).(*)..")
@@ -48,6 +55,14 @@ class ArchitectureTest {
             .should().dependOnClassesThat(
                     resideInAnyPackage(ROOT + ".application.service..", ROOT + ".application.port.out..")
                             .or(resideInAPackage(ADAPTER).and(not(resideInAPackage(TOOL)))))
+            .allowEmptyShould(true);
+
+    @ArchTest
+    static final ArchRule mcpAdapterCallsInboundPortsOnly = noClasses()
+            .that().resideInAPackage(MCP)
+            .should().dependOnClassesThat(
+                    resideInAnyPackage(ROOT + ".application.service..", ROOT + ".application.port.out..")
+                            .or(resideInAPackage(ADAPTER).and(not(resideInAPackage(MCP)))))
             .allowEmptyShould(true);
 
     // 들어오는 어댑터는 port.in으로만 애플리케이션에 들어간다. 나가는 포트를 직접 부르면 서비스를 건너뛴다.
@@ -66,6 +81,11 @@ class ArchitectureTest {
             .and(noClasses()
                     .that().resideInAnyPackage(DOMAIN, APPLICATION, ADAPTER)
                     .should().dependOnClassesThat().resideInAPackage(SIMULATOR));
+
+    // 웹 스택은 WebFlux다. 서블릿 API를 쓰면 요청 스레드 모델이 섞인다.
+    @ArchTest
+    static final ArchRule noServletApi = noClasses()
+            .should().dependOnClassesThat().resideInAnyPackage("jakarta.servlet..", "org.springframework.web.servlet..");
 
     @ArchTest
     static final ArchRule springOnlyOutsideCore = noClasses()

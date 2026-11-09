@@ -118,6 +118,15 @@ class ControlApiIT {
                         && i.get("kind").asString().equals(kind));
     }
 
+    // WebFlux의 시작 페이지 처리로 루트가 정적 화면을 돌려주는지 본다.
+    @Test
+    void rootServesTheStaticUi() throws Exception {
+        HttpResponse<String> response = get("/");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("<title>설비 관제 어시스턴트</title>");
+    }
+
     @Test
     void chatToolCardThenHttpConfirm_simulatorChanges() throws Exception {
         loginOperator();

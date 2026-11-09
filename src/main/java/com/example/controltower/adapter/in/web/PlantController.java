@@ -4,6 +4,7 @@ import com.example.controltower.application.port.in.PlantSnapshot;
 import com.example.controltower.application.port.in.PlantStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 public class PlantController {
@@ -15,7 +16,7 @@ public class PlantController {
     }
 
     @GetMapping("/api/plant/status")
-    PlantSnapshot status() {
-        return plant.snapshot();
+    Mono<PlantSnapshot> status() {
+        return Blocking.call(plant::snapshot);
     }
 }

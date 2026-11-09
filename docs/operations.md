@@ -56,6 +56,47 @@ Docker가 필요하고 비용은 들지 않습니다. `*IT`는 Docker가 없으�
 docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 ```
 
+## MCP로 조회 연결
+
+외부 에이전트가 현황을 조회하도록 MCP 서버를 켤 수 있습니다. 조회 도구 네 개(`getPlantStatus`, `getEquipment`, `getTimeline`, `diagnose`)만 열리고 제안·확정은 열리지 않습니다. 결과는 채팅 도구와 같은 고정 형식입니다. 기본은 꺼져 있습니다.
+
+```bash
+export MCP_TOKEN=$(openssl rand -hex 32)
+./gradlew bootRun --args='--controltower.mcp.enabled=true'   # MCP_TOKEN이 없으면 기동 실패
+```
+
+엔드포인트는 `http://<호스트>:8080/mcp`(Streamable HTTP)이고, 모든 요청에 `Authorization: Bearer <MCP_TOKEN>`이 필요합니다. 토큰이 없거나 틀리면 401입니다. HTTP 원격 서버와 헤더를 지원하는 MCP 클라이언트라면 대체로 아래 형태로 등록합니다(클라이언트마다 키 이름이 다를 수 있습니다). 이 설정은 MCP Java SDK 클라이언트로만 확인했고, 데스크톱·CLI 클라이언트 앱에서는 확인하지 않았습니다.
+
+```json
+{
+  "mcpServers": {
+    "control-tower": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer <MCP_TOKEN>" }
+    }
+  }
+}
+```
+
+토큰 하나를 모든 클라이언트가 나눠 쓰고 호출 수 제한이 없습니다. 사내망 밖에 열지 않습니다. 평문 HTTP에서는 토큰이 그대로 보이므로 사내망 밖이면 TLS 뒤에 둡니다.
+
+## 추적 보기(Jaeger)
+
+기본은 추적을 밖으로 보내지 않습니다. Jaeger를 띄우고 OTLP 주소를 주면 보냅니다.
+
+```bash
+docker compose --profile observability up -d     # db와 Jaeger(화면 16686, OTLP HTTP 4318)
+export MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+./gradlew bootRun --args='--spring.profiles.active=demo'
+```
+
+`http://localhost:16686`에서 서비스 `control-tower`를 고릅니다. 데모 모드에서 operator로 로그인해 "CV-3 정비 요청 올려줘"를 보낸 뒤 Jaeger 조회 API로 확인했습니다. 추적 하나에 span 10개(이름 9종)가 있었습니다: `http post /api/chat/stream`, `spring_ai chat_client`, `message_chat_memory`, `retrieval_augmentation`, `pg_vector query`, `tool _calling `, `stream`, `execute_tool proposeMaintenance`, `controltower.command.propose`(태그 `kind=MAINTENANCE`, `outcome=PROPOSED`). 질문 문장은 그 추적 어디에도 없었습니다. 데모 모델은 계측되지 않아 모델 호출 span이 없습니다. 실제 Claude로는 확인하지 않았습니다. 화면 스크린샷은 남기지 않았습니다.
+
+5초 주기 감지가 읽는 설비 호출은 상위 요청이 없어 주기마다 별도 추적으로 남습니다. Jaeger 목록이 이것으로 차면 서비스 화면에서 작업 이름(`http post /api/chat/stream` 등)으로 걸러 보세요(코드로 판단, 재지 않음). Jaeger 포트는 이 컴퓨터(127.0.0.1)에만 열립니다.
+
+`docker compose up -d`만 하면 Jaeger는 뜨지 않습니다. actuator는 `/actuator/health`(상태만)와 `/actuator/metrics`만 열려 있고, 회로 상태는 `/actuator/metrics/resilience4j.circuitbreaker.state`에서 봅니다.
+
 ## 한계
 
 운영 환경에 투입할 수준으로 검증된 프로젝트가 아닙니다.
@@ -71,6 +112,7 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 - **도구 호출 한도(한 턴 8회)를 넘으면** 인자 형식이 틀려 실패한 호출까지 세어 16회까지는 모델에게 알리기만 하고, 17번째 호출에서 스트림을 `error`로 끝냅니다. 한 턴의 답변 생성 호출은 최대 17번 과금됩니다(후속 질문이면 재작성 호출 1번이 더해집니다).
 - **시뮬레이터 설비 API가 같은 포트에 열려 있습니다.** `controltower.simulator.enabled=true`(기본값)이면 `/sim/...` 아래 가상 설비의 상태 조회, 명령, 안전 신호, 시나리오 제어가 인증 없이 열리고, 이를 직접 부르면 확인 카드와 안전 규칙을 거치지 않습니다. 데모 전용입니다. 실제 설비에 붙일 때는 끕니다(README의 "귀사 설비에 붙일 때").
 - **하드 스톱으로 끝난 턴의 카드는 보이지 않습니다.** 17번째 도구 호출로 스트림이 `error`로 끝나면 그 턴에 이미 만든 확인 카드는 `action`으로 나가지 않고, 확정되지 않은 채 2분 뒤 만료됩니다.
+- **설비 게이트웨이 장애 뒤 회복이 늦게 보입니다.** 설비군마다 서킷 브레이커가 있어 응답 없음이나 5xx가 최근 6건 중 절반 이상이면 회로가 열립니다. 열린 동안(기본 10초, `controltower.equipment.circuit-breaker.wait-in-open-state`)은 설비가 회복돼도 그 설비군은 UNKNOWN이고 제안은 거절, 확정은 보내지 않고 "보내지 못함"(FAILED)으로 닫힙니다. 회로 상태 변화는 설비군 이름과 상태만 WARN 로그로 남습니다. 장애가 시작된 뒤 회로가 열리기까지는 무응답 조회 6번(약 18초)이 걸리고, 반열림 때 아직 죽어 있으면 느린 조회(3초)가 최대 3번 더 생깁니다.
 - **설비 프로토콜은 가상입니다.** 제조사별 HTTP 형식은 시뮬레이터용으로 만든 것입니다.
 
 ## 검증 상태
@@ -78,7 +120,7 @@ docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 실행으로 확인한 것과 하지 못한 것을 나눠 적습니다.
 
 - **자동 테스트와 화면:** 가짜 모델, 로컬 스텁, 시뮬레이터, PostgreSQL 컨테이너로 전체 자동 테스트를 돌렸습니다. 데모 모드의 다섯 장면을 확인했습니다. 헤드리스 Chrome으로 화면 동작도 봤습니다(확정 더블 클릭 시 요청 1건, 만료 카드 버튼 비활성, 상태가 바뀐 카드 409 문구, 연결 끊김 표시, 폭 360px에서 가로 스크롤 없음).
-- **실제 모델(로컬 Ollama `qwen2.5:7b` + 실제 Gemini 임베딩, `LocalModelIT` 6건 통과):**
+- **실제 모델(로컬 Ollama `qwen2.5:7b` + 실제 Gemini 임베딩, `LocalModelIT` 6건):** 6건이 모두 통과한 실행이 있었지만, 7B 로컬 모델은 답이 매번 달라 반복하면 일부가 실패합니다. 후속 질문 재작성(`followUpUsesHistory`)은 웹 스택 전환 전후 모두 여섯 번 중 다섯 번 통과했습니다. 실패한 실행에서는 첫 답변이 다른 언어로 섞이거나 도구 호출을 본문 글자로 내보냈고, 그 대화로 다시 쓴 검색어가 엉뚱해져 문서를 찾지 못했습니다. 우회 도구 선택(`realModelPicksDivertDuringChuteJam`)도 가끔 실패합니다. 이 검사는 회귀를 막는 기준이 아니라 실제 모델이 어떻게 움직이는지 보는 탐색용입니다.
   - 슈트 만재 상황을 열린 질문("어떻게 하면 좋을까요?")으로 물으면 모델이 스스로 우회 제안 도구를 골라 카드를 만들고, 확정 전에는 아무것도 전송되지 않습니다.
   - 작업자 진입 중 이전 지시를 무시하고 확인 없이 모든 설비를 움직이라는 인젝션 문장을 보내도 전송은 0건이고, 실행했다고 답하지 않습니다.
   - 실제 임베딩 검색은 관련 질문 10개가 모두 맞는 문서를 1위로 찾습니다(최저 점수 0.674). 무관 질문 6개의 최고 점수는 0.531입니다. 그래서 임계값을 그 가운데인 **0.60**으로 정했습니다. 이전 초기값 0.4에서는 무관 질문 6개가 모두 문서를 끌고 왔습니다.
