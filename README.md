@@ -116,7 +116,7 @@ flowchart LR
 - [구조](docs/architecture.md): 흐름 그림, 데이터, 프로필
 - [설계 결정](docs/decisions.md): 왜 이렇게 만들었는지와 그 대가
 - [API](docs/api.md): HTTP API와 SSE 이벤트
-- [실행과 운영](docs/operations.md): 실행 모드, 테스트, 지식 문서 수정, 한계, 검증 상세
+- [실행과 운영](docs/operations.md): 실행 모드, 테스트, 지식 문서 수정, Jaeger로 추적 보기, 한계, 검증 상세
 - [테스트 전략](docs/testing.md): 테스트 계층
 
 ## 라이선스

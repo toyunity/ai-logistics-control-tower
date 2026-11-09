@@ -14,6 +14,7 @@ import java.net.ServerSocket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.Map;
 import java.util.function.Function;
@@ -58,7 +59,8 @@ class EquipmentHttpTest {
                 EquipmentStub.CONNECT_TIMEOUT,
                 EquipmentStub.READ_TIMEOUT,
                 CircuitBreakerRegistry.ofDefaults(),
-                EquipmentHttp.breakerConfig(100, 100, Duration.ofMinutes(1), 1));
+                EquipmentHttp.breakerConfig(100, 100, Duration.ofMinutes(1), 1),
+                ObservationRegistry.NOOP);
     }
 
     private static String refusingUrl() throws IOException {

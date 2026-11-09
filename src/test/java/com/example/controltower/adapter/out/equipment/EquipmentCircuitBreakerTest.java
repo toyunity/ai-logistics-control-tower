@@ -10,6 +10,9 @@ import com.example.controltower.domain.CommandOutcomeUnknownException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker.State;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -37,13 +40,15 @@ class EquipmentCircuitBreakerTest {
 
     private final EquipmentStub stub = new EquipmentStub();
     private final CircuitBreakerRegistry registry = CircuitBreakerRegistry.ofDefaults();
+    private final TestObservationRegistry observations = TestObservationRegistry.create();
     // 열린 상태는 테스트 동안 풀리지 않을 만큼 길게 둔다. 반열림은 상태를 직접 바꿔 본다.
     private final EquipmentHttp http = new EquipmentHttp(
             new MockEnvironment().withProperty("controltower.equipment.base-url", stub.baseUrl()),
             EquipmentStub.CONNECT_TIMEOUT,
             EquipmentStub.READ_TIMEOUT,
             registry,
-            EquipmentHttp.breakerConfig(WINDOW, 50, Duration.ofMinutes(10), 1));
+            EquipmentHttp.breakerConfig(WINDOW, 50, Duration.ofMinutes(10), 1),
+            observations);
     private final AtomicInteger reads = new AtomicInteger();
 
     @AfterEach
@@ -93,6 +98,31 @@ class EquipmentCircuitBreakerTest {
         assertThat(stub.sent()).isEmpty();
         assertThat(read(Group.CONVEYORS, "/other/{id}")).isEqualTo(7);
         assertThat(breaker(Group.CONVEYORS).getState()).isEqualTo(State.CLOSED);
+    }
+
+    // 결과마다 태그는 설비군, 동작, 결과값 세 개뿐이다. 경로의 설비 ID나 응답 본문은 관측에 들어가지 않는다.
+    @Test
+    void eachCallIsObservedWithEnumTagsOnly() {
+        stub.reply("POST", DEVICE, 503, "SECRET-BODY");
+        stub.reply("GET", OTHER, 200, "{\"value\":7}");
+        read(Group.CONVEYORS, "/other/{id}");
+        assertThatThrownBy(this::send).isInstanceOf(CommandOutcomeUnknownException.class);
+        breaker(Group.SORTER).transitionToOpenState();
+        assertPlainGatewayFailure(this::send);
+
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasNumberOfObservationsWithNameEqualTo(EquipmentHttp.CALL, 3)
+                .forAllObservationsWithNameEqualTo(EquipmentHttp.CALL, o -> o
+                        .hasOnlyKeys("group", "operation", "outcome")
+                        .doesNotHaveError())
+                .hasAnObservation(o -> o.hasLowCardinalityKeyValue("group", "conveyors")
+                        .hasLowCardinalityKeyValue("operation", "read")
+                        .hasLowCardinalityKeyValue("outcome", "OK"))
+                .hasAnObservation(o -> o.hasLowCardinalityKeyValue("group", "sorter")
+                        .hasLowCardinalityKeyValue("operation", "send")
+                        .hasLowCardinalityKeyValue("outcome", "OUTCOME_UNKNOWN"))
+                .hasAnObservation(o -> o.hasLowCardinalityKeyValue("operation", "send")
+                        .hasLowCardinalityKeyValue("outcome", "CIRCUIT_OPEN"));
     }
 
     @Test
@@ -214,7 +244,8 @@ class EquipmentCircuitBreakerTest {
                 EquipmentStub.CONNECT_TIMEOUT,
                 EquipmentStub.READ_TIMEOUT,
                 CircuitBreakerRegistry.ofDefaults(),
-                EquipmentHttp.breakerConfig(WINDOW, 50, wait, 1));
+                EquipmentHttp.breakerConfig(WINDOW, 50, wait, 1),
+                ObservationRegistry.NOOP);
         stub.reply("GET", DEVICE, 503, "");
         for (int i = 0; i < WINDOW; i++) {
             assertPlainGatewayFailure(() -> shortWait.read(Group.SORTER, PATH, Wire.class, Wire::value, ID));

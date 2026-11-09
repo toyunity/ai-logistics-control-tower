@@ -9,5 +9,11 @@ services:
       POSTGRES_PASSWORD: consult
     volumes:
       - pgdata:/var/lib/postgresql/data
+  jaeger:                            # 추적 보기용. docker compose --profile observability up -d 일 때만 뜬다
+    image: jaegertracing/jaeger:2.11.0
+    profiles: [observability]
+    ports:
+      - "16686:16686"                # 화면
+      - "4318:4318"                  # OTLP HTTP 수신
 volumes:
   pgdata:

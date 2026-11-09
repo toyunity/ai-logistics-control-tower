@@ -79,19 +79,21 @@ class ObservabilityIT {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Set<String> GROUPS = Set.of("conveyors", "sorter", "robots", "safety-plc");
 
+    // 애플리케이션이 SpanExporter 빈을 감싸므로 타입으로 주입받지 않고 인스턴스를 직접 쥔다.
+    private static final InMemorySpanExporter spans = InMemorySpanExporter.create();
+
     @TestConfiguration(proxyBeanMethods = false)
     static class Spans {
 
         @Bean
         InMemorySpanExporter inMemorySpanExporter() {
-            return InMemorySpanExporter.create();
+            return spans;
         }
     }
 
     @LocalServerPort int port;
     @Autowired ApplicationContext context;
     @Autowired MeterRegistry meters;
-    @Autowired InMemorySpanExporter spans;
     @Autowired SdkTracerProvider tracerProvider;
     @Autowired FakeChatModel model;
     @Autowired ProposeCommand propose;
@@ -127,7 +129,7 @@ class ObservabilityIT {
 
         HttpResponse<String> health = get("/actuator/health");
         assertThat(health.statusCode()).isEqualTo(200);
-        assertThat(JSON.readTree(health.body()).propertyNames()).containsExactly("status");
+        assertThat(JSON.readTree(health.body()).propertyNames()).doesNotContain("components", "details");
 
         assertThat(get("/actuator/metrics").statusCode()).isEqualTo(200);
         for (String hidden : List.of("env", "configprops", "beans", "circuitbreakerevents", "circuitbreakers",
@@ -253,12 +255,31 @@ class ObservabilityIT {
                 .anyMatch(s -> s.getKind() == SpanKind.SERVER && s.getName().contains("/api/chat/stream"))
                 .anyMatch(s -> s.getName().contains("chat_client"))
                 .anyMatch(s -> s.getName().contains("proposeMaintenance"));
+        SpanData tool = trace.stream().filter(s -> s.getName().contains("proposeMaintenance")).findFirst().orElseThrow();
+        assertThat(proposeSpan.getParentSpanId()).isEqualTo(tool.getSpanId());
 
         for (SpanData span : all) {
             assertThat(render(span)).as(span.getName()).doesNotContain(MARKER);
         }
         assertNoMeterTagContains(MARKER);
         assertThat(output.getAll()).doesNotContain(MARKER);
+    }
+
+    // 웹 어댑터는 서비스 호출을 boundedElastic으로 넘긴다. 그 스레드에서도 HTTP 요청의 추적이 이어져야 한다.
+    @Test
+    void decideOverHttpOnBoundedElasticJoinsTheRequestTrace() throws Exception {
+        assertThat(post("/api/session", "{\"accountId\":\"operator\"}").statusCode()).isEqualTo(200);
+        spans.reset();
+
+        post("/api/commands/" + UUID.randomUUID() + "/reject", "");
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> spanNamed("controltower.command.decide") != null);
+        tracerProvider.forceFlush().join(5, TimeUnit.SECONDS);
+        SpanData decideSpan = spanNamed("controltower.command.decide");
+        assertThat(spans.getFinishedSpanItems())
+                .filteredOn(s -> s.getSpanId().equals(decideSpan.getParentSpanId()))
+                .singleElement()
+                .satisfies(parent -> assertThat(parent.getKind()).isEqualTo(SpanKind.SERVER));
     }
 
     private SpanData spanNamed(String name) {

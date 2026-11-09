@@ -81,6 +81,20 @@ export MCP_TOKEN=$(openssl rand -hex 32)
 
 토큰 하나를 모든 클라이언트가 나눠 쓰고 호출 수 제한이 없습니다. 사내망 밖에 열지 않습니다. 평문 HTTP에서는 토큰이 그대로 보이므로 사내망 밖이면 TLS 뒤에 둡니다.
 
+## 추적 보기(Jaeger)
+
+기본은 추적을 밖으로 보내지 않습니다. Jaeger를 띄우고 OTLP 주소를 주면 보냅니다.
+
+```bash
+docker compose --profile observability up -d     # db와 Jaeger(화면 16686, OTLP HTTP 4318)
+export MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+./gradlew bootRun --args='--spring.profiles.active=demo'
+```
+
+`http://localhost:16686`에서 서비스 `control-tower`를 고릅니다. 데모 모드에서 operator로 로그인해 "CV-3 정비 요청 올려줘"를 보낸 뒤 Jaeger 조회 API로 확인했습니다. 추적 하나에 span 10개(이름 9종)가 있었습니다: `http post /api/chat/stream`, `spring_ai chat_client`, `message_chat_memory`, `retrieval_augmentation`, `pg_vector query`, `tool _calling `, `stream`, `execute_tool proposeMaintenance`, `controltower.command.propose`(태그 `kind=MAINTENANCE`, `outcome=PROPOSED`). 질문 문장은 그 추적 어디에도 없었습니다. 데모 모델은 계측되지 않아 모델 호출 span이 없습니다. 실제 Claude로는 확인하지 않았습니다. 화면 스크린샷은 남기지 않았습니다.
+
+`docker compose up -d`만 하면 Jaeger는 뜨지 않습니다. actuator는 `/actuator/health`(상태만)와 `/actuator/metrics`만 열려 있고, 회로 상태는 `/actuator/metrics/resilience4j.circuitbreaker.state`에서 봅니다.
+
 ## 한계
 
 운영 환경에 투입할 수준으로 검증된 프로젝트가 아닙니다.

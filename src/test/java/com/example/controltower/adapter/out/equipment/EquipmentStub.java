@@ -12,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -148,7 +149,8 @@ final class EquipmentStub implements AutoCloseable {
                 CONNECT_TIMEOUT,
                 READ_TIMEOUT,
                 CircuitBreakerRegistry.ofDefaults(),
-                breakerConfig);
+                breakerConfig,
+                ObservationRegistry.NOOP);
     }
 
     /** CommandOutcomeUnknownException도 하위 타입이라 isInstanceOf로는 구분되지 않는다. */

@@ -11,12 +11,15 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.SlidingWindowType;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -67,7 +70,15 @@ class EquipmentHttp {
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
             .build();
 
+    // 관측 태그는 설비군, read/send, 아래 결과값뿐이다. 경로, 설비 ID, 예외는 넣지 않는다(예외 문구에 URL과 응답 본문이 든다).
+    static final String CALL = "controltower.equipment.call";
+    private static final String OK = "OK";
+    private static final String UNAVAILABLE = "UNAVAILABLE";
+    private static final String OUTCOME_UNKNOWN = "OUTCOME_UNKNOWN";
+    private static final String CIRCUIT_OPEN = "CIRCUIT_OPEN";
+
     private final Environment env;
+    private final ObservationRegistry observations;
     private final RestClient client;
     private final Map<Group, CircuitBreaker> breakers = new EnumMap<>(Group.class);
 
@@ -80,8 +91,11 @@ class EquipmentHttp {
             @Value("${controltower.equipment.circuit-breaker.sliding-window-size}") int window,
             @Value("${controltower.equipment.circuit-breaker.failure-rate-threshold}") float failureRate,
             @Value("${controltower.equipment.circuit-breaker.wait-in-open-state}") Duration openWait,
-            @Value("${controltower.equipment.circuit-breaker.half-open-calls}") int halfOpenCalls) {
-        this(env, connectTimeout, readTimeout, registry, breakerConfig(window, failureRate, openWait, halfOpenCalls));
+            @Value("${controltower.equipment.circuit-breaker.half-open-calls}") int halfOpenCalls,
+            ObjectProvider<ObservationRegistry> observations) {
+        // 웹 슬라이스 테스트에는 레지스트리가 없다.
+        this(env, connectTimeout, readTimeout, registry, breakerConfig(window, failureRate, openWait, halfOpenCalls),
+                observations.getIfAvailable(() -> ObservationRegistry.NOOP));
     }
 
     EquipmentHttp(
@@ -89,8 +103,10 @@ class EquipmentHttp {
             Duration connectTimeout,
             Duration readTimeout,
             CircuitBreakerRegistry registry,
-            CircuitBreakerConfig breakerConfig) {
+            CircuitBreakerConfig breakerConfig,
+            ObservationRegistry observations) {
         this.env = env;
+        this.observations = observations;
         for (Group group : Group.values()) {
             // 같은 이름의 회로가 레지스트리에 이미 있으면 설정을 무시하고 기존 회로를 돌려준다. 이 빈은 하나만 만든다는 전제다.
             CircuitBreaker breaker = registry.circuitBreaker(group.breaker, breakerConfig);
@@ -107,47 +123,73 @@ class EquipmentHttp {
 
     /** 번역까지 여기서 감싸므로 도메인 레코드의 검증 실패도 게이트웨이 장애가 된다. 값은 URI 템플릿으로 넣어 경로를 벗어나지 못한다. */
     <T, R> R read(Group group, String path, Class<T> wire, Function<T, R> translate, Object... uriVariables) {
+        Observation call = start(group, "read");
+        String outcome = UNAVAILABLE;
         try {
             String url = url(path, uriVariables);
-            // 회로는 HTTP 교환만 감싼다. 번역 실패는 기기가 답한 것이라 세지 않는다. 열린 회로도 이 catch로 거절된다.
+            // 회로는 HTTP 교환만 감싼다. 번역 실패는 기기가 답한 것이라 세지 않는다.
             String json = breakers.get(group)
                     .executeSupplier(() -> client.get().uri(url, uriVariables).retrieve().body(String.class));
-            return translate.apply(STRICT.readValue(json, wire));
+            R result = translate.apply(STRICT.readValue(json, wire));
+            outcome = OK;
+            return result;
+        } catch (CallNotPermittedException e) {
+            outcome = CIRCUIT_OPEN;
+            throw unavailable();
         } catch (RuntimeException e) {
             throw unavailable();
+        } finally {
+            call.lowCardinalityKeyValue("outcome", outcome).stop();
         }
     }
 
     void send(Group group, String path, Object body, Object... uriVariables) {
-        String url = url(path, uriVariables);
-        boolean succeeded;
+        Observation call = start(group, "send");
+        String outcome = UNAVAILABLE;
         try {
-            succeeded = breakers.get(group).executeSupplier(() -> client.post()
-                    .uri(url, uriVariables)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .getStatusCode()
-                    .is2xxSuccessful());
-        } catch (CallNotPermittedException e) {
-            // 열린 회로에서는 요청이 나가지 않았으므로 결과 미확인이 아니라 보내지 못한 것이다.
-            throw unavailable();
-        } catch (ResourceAccessException e) {
-            if (neverReached(e.getCause())) {
+            String url = url(path, uriVariables);
+            boolean succeeded;
+            try {
+                succeeded = breakers.get(group).executeSupplier(() -> client.post()
+                        .uri(url, uriVariables)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .getStatusCode()
+                        .is2xxSuccessful());
+            } catch (CallNotPermittedException e) {
+                // 열린 회로에서는 요청이 나가지 않았으므로 결과 미확인이 아니라 보내지 못한 것이다.
+                outcome = CIRCUIT_OPEN;
+                throw unavailable();
+            } catch (ResourceAccessException e) {
+                if (neverReached(e.getCause())) {
+                    throw unavailable();
+                }
+                outcome = OUTCOME_UNKNOWN;
+                throw outcomeUnknown();
+            } catch (HttpServerErrorException e) {
+                // 502, 504처럼 게이트웨이나 프록시가 낸 응답일 수 있어 기기가 받았는지 모른다. 4xx는 기기의 거절로 본다.
+                outcome = OUTCOME_UNKNOWN;
+                throw outcomeUnknown();
+            } catch (RuntimeException e) {
                 throw unavailable();
             }
-            throw outcomeUnknown();
-        } catch (HttpServerErrorException e) {
-            // 502, 504처럼 게이트웨이나 프록시가 낸 응답일 수 있어 기기가 받았는지 모른다. 4xx는 기기의 거절로 본다.
-            throw outcomeUnknown();
-        } catch (RuntimeException e) {
-            throw unavailable();
+            // 3xx는 RestClient가 오류로 치지 않는다.
+            if (!succeeded) {
+                throw unavailable();
+            }
+            outcome = OK;
+        } finally {
+            call.lowCardinalityKeyValue("outcome", outcome).stop();
         }
-        // 3xx는 RestClient가 오류로 치지 않는다.
-        if (!succeeded) {
-            throw unavailable();
-        }
+    }
+
+    private Observation start(Group group, String operation) {
+        return Observation.createNotStarted(CALL, observations)
+                .lowCardinalityKeyValue("group", group.breaker)
+                .lowCardinalityKeyValue("operation", operation)
+                .start();
     }
 
     /**
