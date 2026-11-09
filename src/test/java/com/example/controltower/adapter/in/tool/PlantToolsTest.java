@@ -33,7 +33,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.execution.ToolExecutionException;
 
@@ -60,11 +59,15 @@ class PlantToolsTest {
     }
 
     private String callJson(String name, String args) {
-        ToolCallback callback = Arrays.stream(ToolCallbacks.from(tools))
+        return callJson(name, args, ctx);
+    }
+
+    private String callJson(String name, String args, ToolContext context) {
+        ToolCallback callback = Arrays.stream(tools.callbacks())
                 .filter(c -> c.getToolDefinition().name().equals(name))
                 .findFirst()
                 .orElseThrow();
-        return callback.call(args, ctx);
+        return callback.call(args, context);
     }
 
     @Test
@@ -108,15 +111,17 @@ class PlantToolsTest {
     }
 
     @Test
-    void toolBudget_ninthCallLimited() {
+    void toolBudget_ninthCallLimited_conversionFailuresCountToo() {
         when(status.equipment("CV-3")).thenReturn(Optional.of(new EquipmentView("CV-3", "CONVEYOR", RunState.RUNNING, Map.of())));
         var limited = new ToolContext(Map.of(TurnScope.KEY, new TurnScope(OPERATOR, 8)));
 
-        for (int i = 0; i < 8; i++) {
-            assertThat(tools.getEquipment("CV-3", limited)).isInstanceOf(ToolResults.Ok.class);
+        assertThatThrownBy(() -> callJson("getTimeline", "{\"equipmentId\":\"CV-3\",\"minutes\":\"abc\"}", limited))
+                .isInstanceOf(ToolExecutionException.class);
+        for (int i = 0; i < 7; i++) {
+            assertThat(callJson("getEquipment", "{\"id\":\"CV-3\"}", limited)).contains("\"status\":\"OK\"");
         }
 
-        assertThat(tools.proposeRestart("CV-3", limited)).isEqualTo(ToolResults.LIMIT_EXCEEDED);
+        assertThat(callJson("proposeRestart", "{\"conveyorId\":\"CV-3\"}", limited)).contains("\"status\":\"LIMIT_EXCEEDED\"");
         assertThat(proposedSpecs).isEmpty();
     }
 

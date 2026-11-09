@@ -43,7 +43,7 @@ public final class TurnScope {
         return List.copyOf(proposed.values());
     }
 
-    /** 도구 예외 처리기가 삼키지 않고 다시 던져 스트림을 error로 끝낸다. */
+    /** 도구 콜백 바깥에서 던져 도구 예외 처리기에 잡히지 않고 스트림을 error로 끝낸다. */
     public static final class BudgetExhausted extends RuntimeException {
 
         public BudgetExhausted() {
