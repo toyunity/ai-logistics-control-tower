@@ -1,5 +1,6 @@
 package com.example.controltower.demo;
 
+import java.util.Map;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -9,6 +10,9 @@ final class DemoReply {
     static final String PREFIX = "[데모 응답 · 실제 AI 아님] ";
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    // index.html의 STATE와 같은 이름이다. 바꾸면 함께 고친다.
+    private static final Map<String, String> STATE = Map.of(
+            "RUNNING", "가동", "STOPPED", "정지", "FAULT", "고장", "DEGRADED", "저하", "OFFLINE", "연결 끊김", "UNKNOWN", "알 수 없음");
     private static final String UNREADABLE = "도구 결과를 읽지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
     private DemoReply() {}
@@ -45,7 +49,7 @@ final class DemoReply {
         for (JsonNode e : data.path("equipment")) {
             if (!e.path("state").asString("").equals("RUNNING")) {
                 abnormal.append(abnormal.isEmpty() ? "" : ", ")
-                        .append(e.path("id").asString()).append(' ').append(e.path("state").asString());
+                        .append(e.path("id").asString()).append(' ').append(STATE.getOrDefault(e.path("state").asString(""), "알 수 없음"));
             }
         }
         String equipment = abnormal.isEmpty() ? "모든 설비가 정상 운전 중입니다." : "정상 운전이 아닌 설비: " + abnormal + ".";
