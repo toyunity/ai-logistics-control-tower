@@ -1,9 +1,6 @@
 package com.example.controltower.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.controltower.application.port.in.DetectAnomalies;
 import com.example.controltower.application.port.in.IngestEvent;
@@ -28,15 +25,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import tools.jackson.databind.json.JsonMapper;
 
-@WebMvcTest(EventController.class)
+@WebFluxTest(EventController.class)
 @Import(EventControllerTest.Wiring.class)
 @ExtendWith(OutputCaptureExtension.class)
 class EventControllerTest {
@@ -87,7 +83,7 @@ class EventControllerTest {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
-    @Autowired MockMvc mvc;
+    @Autowired WebTestClient client;
     @Autowired InMemoryEventLog log;
     @Autowired SlowDetection detection;
 
@@ -96,8 +92,8 @@ class EventControllerTest {
         log.setFailing(false);
     }
 
-    private ResultActions send(String body) throws Exception {
-        return mvc.perform(post("/api/events").contentType(MediaType.APPLICATION_JSON).content(body));
+    private WebTestClient.ResponseSpec send(String body) {
+        return client.post().uri("/api/events").contentType(MediaType.APPLICATION_JSON).bodyValue(body).exchange();
     }
 
     private static String event(String eventId, String equipmentId, String code) {
@@ -134,7 +130,7 @@ class EventControllerTest {
 
         assertThat(emitted).extracting(SimEvent::code).contains("STOPPED", "RESTARTED", "DIVERT_RELEASED", "READ_NORMAL");
         for (SimEvent e : emitted) {
-            send(JSON.writeValueAsString(e)).andExpect(status().isOk());
+            send(JSON.writeValueAsString(e)).expectStatus().isOk();
         }
     }
 
@@ -145,7 +141,7 @@ class EventControllerTest {
         CountDownLatch hold = new CountDownLatch(1);
         detection.hold = hold;
         try {
-            send(event(UUID.randomUUID().toString(), "CV-3", "STOPPED")).andExpect(status().isOk());
+            send(event(UUID.randomUUID().toString(), "CV-3", "STOPPED")).expectStatus().isOk();
 
             assertThat(detection.entered.await(10, TimeUnit.SECONDS)).isTrue();
             assertThat(hold.getCount()).isEqualTo(1);
@@ -159,36 +155,36 @@ class EventControllerTest {
     void duplicate_200() throws Exception {
         String body = event(UUID.randomUUID().toString(), "CV-3", "STOPPED");
 
-        send(body).andExpect(status().isOk());
-        send(body).andExpect(status().isOk());
+        send(body).expectStatus().isOk();
+        send(body).expectStatus().isOk();
     }
 
     @Test
     void malformedEventId_400() throws Exception {
-        send(event("a b", "CV-3", "STOPPED")).andExpect(status().isBadRequest());
-        send(event("x".repeat(65), "CV-3", "STOPPED")).andExpect(status().isBadRequest());
-        send(event("", "CV-3", "STOPPED")).andExpect(status().isBadRequest());
+        send(event("a b", "CV-3", "STOPPED")).expectStatus().isBadRequest();
+        send(event("x".repeat(65), "CV-3", "STOPPED")).expectStatus().isBadRequest();
+        send(event("", "CV-3", "STOPPED")).expectStatus().isBadRequest();
     }
 
     @Test
     void unknownEquipmentOrMalformedCode_400() throws Exception {
-        send(event(UUID.randomUUID().toString(), "CV-9", "STOPPED")).andExpect(status().isBadRequest());
-        send(event(UUID.randomUUID().toString(), "CV-3", "stopped now")).andExpect(status().isBadRequest());
+        send(event(UUID.randomUUID().toString(), "CV-9", "STOPPED")).expectStatus().isBadRequest();
+        send(event(UUID.randomUUID().toString(), "CV-3", "stopped now")).expectStatus().isBadRequest();
     }
 
     @Test
     void missingFields_400() throws Exception {
-        send("{\"eventId\":\"e-1\",\"equipmentId\":\"CV-3\",\"code\":\"STOPPED\"}").andExpect(status().isBadRequest());
+        send("{\"eventId\":\"e-1\",\"equipmentId\":\"CV-3\",\"code\":\"STOPPED\"}").expectStatus().isBadRequest();
         send("{\"eventId\":\"e-1\",\"code\":\"STOPPED\",\"occurredAt\":\"2026-11-07T00:00:00Z\"}")
-                .andExpect(status().isBadRequest());
-        send("{\"eventId\":").andExpect(status().isBadRequest());
+                .expectStatus().isBadRequest();
+        send("{\"eventId\":").expectStatus().isBadRequest();
     }
 
     @Test
     void rejectedEventIsNotLogged(CapturedOutput output) throws Exception {
-        send(event("EVENT MARKER", "CV-3", "STOPPED")).andExpect(status().isBadRequest());
-        send(event(UUID.randomUUID().toString(), "EQUIPMENT-MARKER", "STOPPED")).andExpect(status().isBadRequest());
-        send(event(UUID.randomUUID().toString(), "CV-3", "CODE MARKER")).andExpect(status().isBadRequest());
+        send(event("EVENT MARKER", "CV-3", "STOPPED")).expectStatus().isBadRequest();
+        send(event(UUID.randomUUID().toString(), "EQUIPMENT-MARKER", "STOPPED")).expectStatus().isBadRequest();
+        send(event(UUID.randomUUID().toString(), "CV-3", "CODE MARKER")).expectStatus().isBadRequest();
 
         assertThat(output.getOut() + output.getErr()).doesNotContain("MARKER");
     }
@@ -198,7 +194,8 @@ class EventControllerTest {
         log.setFailing(true);
 
         send(event(UUID.randomUUID().toString(), "CV-3", "STOPPED"))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.message").isString());
+                .expectStatus().isEqualTo(500)
+                .expectBody()
+                .jsonPath("$.message").isNotEmpty();
     }
 }

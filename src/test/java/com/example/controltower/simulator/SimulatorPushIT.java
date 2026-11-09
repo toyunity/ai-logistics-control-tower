@@ -5,11 +5,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.example.controltower.support.FakeAiConfig;
 import com.example.controltower.support.TestInfraConfig;
-import jakarta.servlet.Filter;
-import jakarta.servlet.ServletOutputStream;
-import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +20,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.http.server.reactive.ServerHttpResponse;
+import org.springframework.web.server.WebFilter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /** 실제 서버 포트 해석, 스케줄러, 직렬화까지 한 번에 확인한다. 업무 쪽 수신부와 겹치지 않게 필터에서 가로챈다. */
 @SpringBootTest(
@@ -36,37 +38,42 @@ class SimulatorPushIT {
     private static final Queue<String> PUSHED = new ConcurrentLinkedQueue<>();
     private static final AtomicReference<Hold> HOLD = new AtomicReference<>();
 
-    private record Hold(CountDownLatch entered, CountDownLatch release) {
+    private record Hold(CountDownLatch entered, Sinks.One<Boolean> release) {
         // 읽기 타임아웃이 먼저 끝내면 재시도 사이에 틱이 돌 수 있어, 조금씩 보내 전송 한 건을 끝까지 붙잡는다.
-        void block(ServletResponse response) throws IOException {
+        // 이벤트 루프를 막지 않도록 기다리지 않고 타이머로 쓴다.
+        Mono<Void> block(ServerHttpResponse response) {
             entered.countDown();
-            ServletOutputStream out = response.getOutputStream();
-            try {
-                while (!release.await(500, TimeUnit.MILLISECONDS)) {
-                    out.write(' ');
-                    response.flushBuffer();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            return response.writeAndFlushWith(Flux.interval(Duration.ofMillis(500))
+                    .map(i -> Mono.just(response.bufferFactory().wrap(new byte[] {' '})))
+                    .takeUntilOther(release.asMono()));
         }
     }
 
     @TestConfiguration(proxyBeanMethods = false)
     static class Capture {
         @Bean
-        Filter eventCapture() {
-            return (request, response, chain) -> {
-                if ("/api/events".equals(((HttpServletRequest) request).getRequestURI())) {
-                    PUSHED.add(new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
-                    Hold hold = HOLD.get();
-                    if (hold != null) {
-                        hold.block(response);
-                    }
-                    return;
+        WebFilter eventCapture() {
+            return (exchange, chain) -> {
+                if (!"/api/events".equals(exchange.getRequest().getPath().value())) {
+                    return chain.filter(exchange);
                 }
-                chain.doFilter(request, response);
+                return DataBufferUtils.join(exchange.getRequest().getBody())
+                        .map(SimulatorPushIT::read)
+                        .defaultIfEmpty("")
+                        .flatMap(body -> {
+                            PUSHED.add(body);
+                            Hold hold = HOLD.get();
+                            return hold == null ? exchange.getResponse().setComplete() : hold.block(exchange.getResponse());
+                        });
             };
+        }
+    }
+
+    private static String read(DataBuffer buffer) {
+        try {
+            return buffer.toString(StandardCharsets.UTF_8);
+        } finally {
+            DataBufferUtils.release(buffer);
         }
     }
 
@@ -76,7 +83,7 @@ class SimulatorPushIT {
     void restore() {
         Hold hold = HOLD.getAndSet(null);
         if (hold != null) {
-            hold.release().countDown();
+            hold.release().tryEmitValue(true);
         }
         sim.reset();
     }
@@ -99,7 +106,7 @@ class SimulatorPushIT {
     @Test
     void heldPush_doesNotStopTheTicker() throws InterruptedException {
         await().atMost(Duration.ofSeconds(30)).until(() -> !PUSHED.isEmpty());
-        Hold hold = new Hold(new CountDownLatch(1), new CountDownLatch(1));
+        Hold hold = new Hold(new CountDownLatch(1), Sinks.one());
         HOLD.set(hold);
 
         assertThat(sim.start("scanner-degraded")).isTrue();

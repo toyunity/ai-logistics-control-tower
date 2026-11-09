@@ -67,6 +67,11 @@ class ArchitectureTest {
                     .that().resideInAnyPackage(DOMAIN, APPLICATION, ADAPTER)
                     .should().dependOnClassesThat().resideInAPackage(SIMULATOR));
 
+    // 웹 스택은 WebFlux다. 서블릿 API를 쓰면 요청 스레드 모델이 섞인다.
+    @ArchTest
+    static final ArchRule noServletApi = noClasses()
+            .should().dependOnClassesThat().resideInAnyPackage("jakarta.servlet..", "org.springframework.web.servlet..");
+
     @ArchTest
     static final ArchRule springOnlyOutsideCore = noClasses()
             .that().resideOutsideOfPackages(ADAPTER, ROOT + ".config..", ROOT + ".demo..", SIMULATOR)
