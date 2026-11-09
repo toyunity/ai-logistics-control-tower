@@ -21,6 +21,7 @@ class ArchitectureTest {
     private static final String APPLICATION = ROOT + ".application..";
     private static final String ADAPTER = ROOT + ".adapter..";
     private static final String TOOL = ROOT + ".adapter.in.tool..";
+    private static final String MCP = ROOT + ".adapter.in.mcp..";
     private static final String SIMULATOR = ROOT + ".simulator..";
 
     // domain과 application 규칙에 allowEmptyShould를 두지 않는다.
@@ -48,6 +49,14 @@ class ArchitectureTest {
             .should().dependOnClassesThat(
                     resideInAnyPackage(ROOT + ".application.service..", ROOT + ".application.port.out..")
                             .or(resideInAPackage(ADAPTER).and(not(resideInAPackage(TOOL)))))
+            .allowEmptyShould(true);
+
+    @ArchTest
+    static final ArchRule mcpAdapterCallsInboundPortsOnly = noClasses()
+            .that().resideInAPackage(MCP)
+            .should().dependOnClassesThat(
+                    resideInAnyPackage(ROOT + ".application.service..", ROOT + ".application.port.out..")
+                            .or(resideInAPackage(ADAPTER).and(not(resideInAPackage(MCP)))))
             .allowEmptyShould(true);
 
     // 들어오는 어댑터는 port.in으로만 애플리케이션에 들어간다. 나가는 포트를 직접 부르면 서비스를 건너뛴다.

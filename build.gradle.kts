@@ -17,6 +17,7 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
     implementation("org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc")
     implementation("org.springframework.ai:spring-ai-rag")
+    implementation("org.springframework.ai:spring-ai-starter-mcp-server-webflux")
     implementation("io.projectreactor:reactor-core")
     implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
     runtimeOnly("org.postgresql:postgresql")

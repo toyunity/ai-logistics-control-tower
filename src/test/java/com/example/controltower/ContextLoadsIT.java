@@ -23,6 +23,7 @@ import org.springframework.boot.web.context.reactive.ReactiveWebApplicationConte
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 @SpringBootTest
 @Import({TestInfraConfig.class, FakeAiConfig.class})
@@ -55,5 +56,15 @@ class ContextLoadsIT {
                 IngestEvent.class, DetectAnomalies.class, MaintenanceAdmin.class)) {
             assertThat(ctx.getBeansOfType(port)).as(port.getSimpleName()).hasSize(1);
         }
+    }
+
+    // MCP는 기본으로 꺼져 있다. 서버 빈도 경로도 없어야 한다.
+    @Test
+    void mcpOffByDefault() {
+        assertThat(ctx.getBeanNamesForType(io.modelcontextprotocol.server.McpSyncServer.class)).isEmpty();
+        WebTestClient.bindToApplicationContext(ctx).build()
+                .post().uri("/mcp").header("Content-Type", "application/json").bodyValue("{}")
+                .exchange()
+                .expectStatus().isNotFound();
     }
 }
