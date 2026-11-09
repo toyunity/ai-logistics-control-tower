@@ -9,6 +9,7 @@ import com.example.controltower.application.port.in.IngestEvent;
 import com.example.controltower.application.port.in.MaintenanceAdmin;
 import com.example.controltower.application.port.in.PlantStatus;
 import com.example.controltower.application.port.in.ProposeCommand;
+import com.example.controltower.application.port.in.TurnScope;
 import com.example.controltower.application.port.out.CommandAudit;
 import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.application.port.out.Conveyors;
@@ -80,6 +81,9 @@ public class ServiceConfig {
         String unavailable = JsonParser.toJson(ToolResults.UNAVAILABLE);
         return e -> {
             Throwable cause = e.getCause();
+            if (cause instanceof TurnScope.BudgetExhausted stop) {
+                throw stop;
+            }
             log.warn("도구 실행 실패: {}", cause == null ? "null" : cause.getClass().getName());
             return cause instanceof JacksonException ? invalid : unavailable;
         };
