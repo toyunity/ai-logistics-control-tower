@@ -18,7 +18,7 @@
 | 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
 | 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변, 참관자와 익명은 모든 제안이 권한 없음 |
 | SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과 |
-| 실제 API | `LiveApiIT` | 실제 Claude, Gemini | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
+| 실제 모델 | `LiveApiIT`, `LocalModelIT` (공통 `RealModelChecks`) | 실제 Claude와 Gemini, 또는 로컬 Ollama와 실제 Gemini | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
 
 ## 실행
 
@@ -37,7 +37,7 @@
 
 ## 검증하지 못한 것
 
-- 실제 Claude·Gemini 호출과 실제 임베딩의 검색 품질
+- 실제 Claude 호출(로컬 모델과 실제 Gemini로는 `LocalModelIT` 6건 통과)
 - 실제 모드의 임계값 `0.4`
 - 실제 모델의 도구 선택, 프롬프트 준수, 답변 품질
 - 실제 설비 프로토콜(지금은 제조사별 가상 HTTP)
