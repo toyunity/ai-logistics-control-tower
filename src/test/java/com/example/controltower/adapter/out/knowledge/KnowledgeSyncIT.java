@@ -143,4 +143,13 @@ class KnowledgeSyncIT {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(rows()).isZero();
     }
+
+    @Test
+    void textFormatChange_changesHash() {
+        String idx = props.embeddingIndex();
+
+        assertThat(KnowledgeSync.hash(a, idx, KnowledgeSync.TEXT_FORMAT))
+                .isEqualTo(KnowledgeSync.hash(a, idx, KnowledgeSync.TEXT_FORMAT))
+                .isNotEqualTo(KnowledgeSync.hash(a, idx, "title: %s\nbody: %s"));
+    }
 }

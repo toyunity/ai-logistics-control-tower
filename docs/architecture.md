@@ -109,7 +109,7 @@ PostgreSQL 하나에 둡니다. 제어 테이블은 `schema-control.sql`, 벡터
 | `vector_store` | 지식 문서 본문, 해시, 임베딩 |
 | `spring_ai_chat_memory` | 대화별 메시지 |
 
-지식 문서 해시에는 제목, 본문, 분류와 `controltower.embedding-index`가 들어갑니다. 내용이나 임베딩 방식이 바뀐 문서만 다시 임베딩합니다.
+지식 문서 해시에는 제목, 본문, 분류와 `controltower.embedding-index`, 임베딩할 문장 형식(`KnowledgeSync.TEXT_FORMAT`)이 들어갑니다. 내용, 임베딩 방식, 문장 형식이 바뀐 문서만 다시 임베딩합니다.
 
 ## 프로필
 
