@@ -127,6 +127,36 @@ class PlantStatusServiceTest {
                 .containsEntry("AMR-01", RunState.RUNNING);
     }
 
+    // 바이트를 조금씩 흘려 소켓 읽기 타임아웃을 피하는 게이트웨이를 흉내 낸다. 그 설비군만 UNKNOWN이 되어야 한다.
+    // join()은 인터럽트에 반응하지 않으므로 교착 감지는 별도 스레드 모드로 건다.
+    @Test
+    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void hangingGroup_becomesUnknownWithoutBlockingSnapshotOrEquipment() {
+        CountDownLatch release = new CountDownLatch(1);
+        InMemoryConveyors hanging = new InMemoryConveyors(conveyors.all().toArray(ConveyorStatus[]::new)) {
+            @Override
+            public List<ConveyorStatus> all() {
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return super.all();
+            }
+        };
+        var slow = new PlantStatusService(hanging, sorters, fleet, log, incidents, desk, LineTopology.DEFAULT,
+                Clock.fixed(NOW, ZoneOffset.UTC), reads);
+        try {
+            Map<String, RunState> states = slow.snapshot().equipment().stream()
+                    .collect(Collectors.toMap(EquipmentView::id, EquipmentView::state));
+
+            assertThat(states).containsEntry("CV-1", RunState.UNKNOWN).containsEntry("AMR-01", RunState.RUNNING);
+            assertThat(slow.equipment("CV-1")).map(EquipmentView::state).contains(RunState.UNKNOWN);
+        } finally {
+            release.countDown();
+        }
+    }
+
     @Test
     void snapshot_listsAllTopologyEquipmentWithFactsAndRecords() {
         Incident incident = new Incident(UUID.randomUUID(), "CV-3", "CONVEYOR_STOPPED", Severity.SEV2, NOW, null);

@@ -165,6 +165,7 @@
 
   let busy = false;
   let role = null;
+  let lastStatus = null; // 직전에 그린 권한과 상태 JSON(조회 시각 제외)
   const pendingCards = [];
   const closing = new Set();
 
@@ -201,8 +202,9 @@
 
   // ---- 세션 ----
 
+  // 로그인 응답 전에 보낸 질문은 이전 계정으로 처리되므로 전송을 막는다.
   async function login(accountId) {
-    account.disabled = true;
+    setBusy(true);
     role = null;
     $('whoami').textContent = '로그인 중…';
     try {
@@ -217,7 +219,7 @@
     } catch {
       $('whoami').textContent = '로그인하지 못했습니다. 조회와 대화만 됩니다.';
     }
-    account.disabled = busy;
+    setBusy(false);
   }
 
   account.addEventListener('change', async () => {
@@ -481,6 +483,7 @@
       msg.textContent = MSG_UNSENT;
     }
     closing.delete(id);
+    lastStatus = null; // 실패하면 목록이 그대로라 다음 조회에서 버튼을 되살려야 한다
   }
 
   // 응답이 온 뒤에만 다음 조회를 예약한다. 장애 중 응답이 주기보다 길어도 요청이 겹치지 않는다.
@@ -488,7 +491,15 @@
     try {
       const res = await fetch('/api/plant/status', { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
       if (!res.ok) throw new Error('status');
-      renderStatus(await res.json());
+      const s = await res.json();
+      // 내용이 같으면 다시 그리지 않는다. 다시 그리면 버튼의 포커스와 누르던 클릭이 사라진다.
+      const { at, ...content } = s;
+      // 정비 완료 버튼은 권한에 따라 달라지므로 권한도 비교한다.
+      const key = JSON.stringify([role, content]);
+      if (key !== lastStatus) {
+        renderStatus(s);
+        lastStatus = key;
+      }
       $('conn').hidden = true;
     } catch {
       $('conn').hidden = false;

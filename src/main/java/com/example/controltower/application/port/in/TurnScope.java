@@ -25,8 +25,13 @@ public final class TurnScope {
         return actor;
     }
 
+    /** 한도를 넘으면 false다. 한도의 두 배를 넘으면 모델이 한도 결과를 무시하는 것으로 보고 턴을 끝낸다. */
     public boolean tryCount() {
-        return toolCalls.incrementAndGet() <= maxToolCalls;
+        int n = toolCalls.incrementAndGet();
+        if (n > maxToolCalls * 2) {
+            throw new BudgetExhausted(); // 한도 결과를 돌려줘도 모델 호출은 계속 과금된다
+        }
+        return n <= maxToolCalls;
     }
 
     /** 같은 종류·대상의 카드는 하나만 남긴다. 재사용된 카드는 한 번, 무효화된 이전 카드는 새 카드로 바뀐다. */
@@ -36,5 +41,13 @@ public final class TurnScope {
 
     public synchronized List<PendingCommand> proposed() {
         return List.copyOf(proposed.values());
+    }
+
+    /** 도구 예외 처리기가 삼키지 않고 다시 던져 스트림을 error로 끝낸다. */
+    public static final class BudgetExhausted extends RuntimeException {
+
+        public BudgetExhausted() {
+            super("tool call budget exhausted", null, false, false);
+        }
     }
 }

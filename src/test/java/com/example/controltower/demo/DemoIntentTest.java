@@ -36,6 +36,21 @@ class DemoIntentTest {
                 .contains(new ToolRequest("proposeDivert", "{\"fromChute\":\"CH-03\",\"toChute\":\"CH-04\"}"));
     }
 
+    // 조사 "로/으로"가 붙은 ID가 받는 쪽이다. 어순만 보면 앞에 쓴 대상이 반대로 들어간다.
+    @Test
+    void divertTargetIsTheIdFollowedByRo() {
+        assertThat(DemoIntent.detect("CH-04로 CH-03을 우회해"))
+                .contains(new ToolRequest("proposeDivert", "{\"fromChute\":\"CH-03\",\"toChute\":\"CH-04\"}"));
+        assertThat(DemoIntent.detect("AMR-04으로 AMR-02 작업을 재배정해"))
+                .contains(new ToolRequest("proposeReassign", "{\"fromRobot\":\"AMR-02\",\"toRobot\":\"AMR-04\"}"));
+    }
+
+    @Test
+    void idInsideALargerTokenIsNotMatched() {
+        assertThat(DemoIntent.detect("XCH-03 CH-04로 우회해")).isEmpty();
+        assertThat(DemoIntent.detect("XCV-3 재가동해")).isEmpty();
+    }
+
     @Test
     void twoRobotsWithReassignProposesReassign() {
         assertThat(DemoIntent.detect("AMR-02 작업을 AMR-04로 재배정해"))

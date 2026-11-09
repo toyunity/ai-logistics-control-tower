@@ -23,6 +23,9 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 public class KnowledgeSync implements ApplicationRunner {
 
+    // 임베딩하는 문장 형식이다. 해시에 넣어 형식이 바뀌면 전체를 다시 임베딩한다.
+    static final String TEXT_FORMAT = "제목: %s\n내용: %s";
+
     private final VectorStore vectorStore;
     private final JdbcTemplate jdbc;
     private final JsonMapper jsonMapper;
@@ -64,15 +67,15 @@ public class KnowledgeSync implements ApplicationRunner {
         });
 
         List<Document> changed = docs.stream()
-                .filter(e -> !hash(e).equals(existing.get(e.id())))
+                .filter(e -> !hash(e, props.embeddingIndex(), TEXT_FORMAT).equals(existing.get(e.id())))
                 .map(e -> Document.builder()
                         .id(e.id())
-                        .text("제목: " + e.title() + "\n내용: " + e.body())
+                        .text(TEXT_FORMAT.formatted(e.title(), e.body()))
                         .metadata(Map.of(
                                 "title", e.title(),
                                 "body", e.body(),
                                 "category", e.category(),
-                                "hash", hash(e)))
+                                "hash", hash(e, props.embeddingIndex(), TEXT_FORMAT)))
                         .build())
                 .toList();
         if (!changed.isEmpty()) {
@@ -89,12 +92,12 @@ public class KnowledgeSync implements ApplicationRunner {
         return s == null || s.isBlank();
     }
 
-    private String hash(KnowledgeDocument e) {
+    static String hash(KnowledgeDocument e, String embeddingIndex, String textFormat) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             // 필드 경계가 밀려도 해시가 같아지지 않게 NUL로 구분한다
             String joined = e.title() + '\u0000' + e.body() + '\u0000' + e.category()
-                    + '\u0000' + props.embeddingIndex();
+                    + '\u0000' + embeddingIndex + '\u0000' + textFormat;
             return java.util.HexFormat.of().formatHex(md.digest(joined.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);

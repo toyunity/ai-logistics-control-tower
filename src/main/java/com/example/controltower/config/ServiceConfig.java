@@ -9,6 +9,7 @@ import com.example.controltower.application.port.in.IngestEvent;
 import com.example.controltower.application.port.in.MaintenanceAdmin;
 import com.example.controltower.application.port.in.PlantStatus;
 import com.example.controltower.application.port.in.ProposeCommand;
+import com.example.controltower.application.port.in.TurnScope;
 import com.example.controltower.application.port.out.CommandAudit;
 import com.example.controltower.application.port.out.ControlAssistant;
 import com.example.controltower.application.port.out.Conveyors;
@@ -38,6 +39,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.execution.ToolExecutionExceptionProcessor;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -45,10 +48,12 @@ import org.springframework.ai.util.json.JsonParser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.core.JacksonException;
 
 @Configuration(proxyBeanMethods = false)
 public class ServiceConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(ServiceConfig.class);
     private static final Duration CARD_TTL = Duration.ofMinutes(2);
     private static final SafetyLimits SAFETY_LIMITS = new SafetyLimits(Duration.ofSeconds(3), 30);
     // 설비 읽기는 타임아웃까지 블로킹하므로 요청이 몰려도 스레드가 모자라지 않게 가상 스레드를 쓴다.
@@ -69,11 +74,19 @@ public class ServiceConfig {
         return MethodToolCallbackProvider.builder().toolObjects(new PlantTools(status, propose)).build();
     }
 
-    // 도구 메서드에 닿기 전의 인자 변환 실패다. 기본 처리기는 모델이 보낸 값이 든 예외 문구를 그대로 돌려준다.
+    // 기본 처리기는 모델이 보낸 값이 든 예외 문구를 그대로 돌려준다. 예외 메시지에 인자 값이 들 수 있어 클래스 이름만 남긴다.
     @Bean
     ToolExecutionExceptionProcessor toolExecutionExceptionProcessor() {
-        String fixed = JsonParser.toJson(ToolResults.INVALID_ARGUMENT);
-        return e -> fixed;
+        String invalid = JsonParser.toJson(ToolResults.INVALID_ARGUMENT);
+        String unavailable = JsonParser.toJson(ToolResults.UNAVAILABLE);
+        return e -> {
+            Throwable cause = e.getCause();
+            if (cause instanceof TurnScope.BudgetExhausted stop) {
+                throw stop;
+            }
+            log.warn("도구 실행 실패: {}", cause == null ? "null" : cause.getClass().getName());
+            return cause instanceof JacksonException ? invalid : unavailable;
+        };
     }
 
     @Bean
@@ -133,14 +146,28 @@ public class ServiceConfig {
     }
 
     // 실행 중 하나와 대기 하나만 둔다. 이벤트가 몰려도 감지가 줄줄이 쌓이지 않고, 버린 몫은 5초 주기가 맡는다.
-    // Executor 빈으로 내놓으면 스프링 기본 작업 실행기가 꺼지므로 빈으로 등록하지 않는다.
+    // Executor 빈으로 내놓으면 스프링 기본 작업 실행기가 꺼지므로 Executor가 아닌 타입으로 감싸 종료만 맡긴다.
     @Bean
-    IngestEvent ingestEvent(EventLog events, DetectAnomalies detection) {
-        ThreadPoolExecutor detectionExecutor = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS,
+    DetectionThreads detectionThreads() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(1), Thread.ofPlatform().name("ingest-detection").daemon().factory(),
                 new ThreadPoolExecutor.DiscardPolicy());
-        detectionExecutor.allowCoreThreadTimeOut(true);
-        return new IngestEventService(events, LineTopology.DEFAULT, detection, detectionExecutor);
+        pool.allowCoreThreadTimeOut(true);
+        return new DetectionThreads(pool);
+    }
+
+    @Bean
+    IngestEvent ingestEvent(EventLog events, DetectAnomalies detection, DetectionThreads threads) {
+        return new IngestEventService(events, LineTopology.DEFAULT, detection, threads.pool());
+    }
+
+    /** 컨텍스트가 닫힐 때 AutoCloseable이라 스프링이 close를 부른다. */
+    record DetectionThreads(ThreadPoolExecutor pool) implements AutoCloseable {
+
+        @Override
+        public void close() {
+            pool.shutdownNow();
+        }
     }
 
     @Bean

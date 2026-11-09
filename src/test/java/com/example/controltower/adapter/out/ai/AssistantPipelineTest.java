@@ -186,6 +186,9 @@ class AssistantPipelineTest {
         assertThat(sent.getSystemMessage().getText())
                 .contains("도구 결과", "지식 문서", "이전 대화", "제안만", "카드에서 확정", "실행했다고 말하지", "후보")
                 .doesNotContain("FAQ", "상담원");
+        // 권한 없음이나 거절에도 확정을 안내하면 사용자가 없는 카드를 찾는다.
+        assertThat(sent.getSystemMessage().getText())
+                .contains("status가 OK일 때만", "NOT_PERMITTED", "DENIED", "UNAVAILABLE", "카드가 없으니");
     }
 
     @Test

@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -40,6 +41,8 @@ public final class PlantStatusService implements PlantStatus {
     private static final Duration DIAGNOSE_WINDOW = Duration.ofMinutes(30);
     private static final int MIN_TIMELINE_MINUTES = 1;
     private static final int MAX_TIMELINE_MINUTES = 120;
+    // 소켓 읽기 타임아웃(3초)은 바이트가 조금씩 오면 다시 시작된다. 설비군 읽기 전체를 여기서 끊는다.
+    private static final Duration GROUP_READ_LIMIT = Duration.ofMillis(3500);
 
     private final Conveyors conveyors;
     private final Sorters sorters;
@@ -111,7 +114,7 @@ public final class PlantStatusService implements PlantStatus {
         } else {
             family = this::sorterViews;
         }
-        return Optional.of(viewOrUnknown(readable(family), id));
+        return Optional.of(viewOrUnknown(async(family).join(), id));
     }
 
     @Override
@@ -133,7 +136,8 @@ public final class PlantStatusService implements PlantStatus {
     // 실행기가 거절해도 그 설비군만 UNKNOWN이 되게 한다.
     private CompletableFuture<Map<String, EquipmentView>> async(Supplier<Map<String, EquipmentView>> family) {
         try {
-            return CompletableFuture.supplyAsync(() -> readable(family), reads);
+            return CompletableFuture.supplyAsync(() -> readable(family), reads)
+                    .completeOnTimeout(Map.of(), GROUP_READ_LIMIT.toMillis(), TimeUnit.MILLISECONDS);
         } catch (RuntimeException e) {
             return CompletableFuture.completedFuture(Map.of());
         }
