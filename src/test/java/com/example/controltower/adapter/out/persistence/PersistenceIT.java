@@ -36,9 +36,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
@@ -313,7 +312,7 @@ class PersistenceIT {
         PendingCommand c = saved("op-1", spec);
         pending.transition(c.id(), CommandStatus.PENDING, CommandStatus.EXECUTING, T0);
 
-        ctx.getBean("staleCommandCleanup", ApplicationRunner.class).run(new DefaultApplicationArguments());
+        ctx.getBean("staleCommandCleanup", SmartInitializingSingleton.class).afterSingletonsInstantiated();
 
         assertThat(statusOf(c)).isEqualTo(CommandStatus.UNCONFIRMED);
         assertThat(jdbc.queryForMap("select account_id, result, spec from command_audit where command_id = ?", c.id()))
