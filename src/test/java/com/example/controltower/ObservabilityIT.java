@@ -158,6 +158,9 @@ class ObservabilityIT {
                 "io.micrometer.registry.otlp.OtlpMeterRegistry")) {
             assertThat(beanNamesOf(type)).as(type).isEmpty();
         }
+        // 애플리케이션이 SpanExporter 빈을 감싸 실제 타입으로는 찾지 못하므로 이름으로도 본다.
+        assertThat(context.getBeansOfType(io.opentelemetry.sdk.trace.export.SpanExporter.class).keySet())
+                .containsExactly("inMemorySpanExporter");
     }
 
     private String[] beanNamesOf(String className) {
@@ -280,6 +283,25 @@ class ObservabilityIT {
                 .filteredOn(s -> s.getSpanId().equals(decideSpan.getParentSpanId()))
                 .singleElement()
                 .satisfies(parent -> assertThat(parent.getKind()).isEqualTo(SpanKind.SERVER));
+    }
+
+    // 현황 조회의 병렬 읽기는 가상 스레드 실행기에서 돈다. 그 읽기도 요청의 추적에 붙어야 한다.
+    @Test
+    void parallelPlantReadsJoinTheRequestTrace() throws Exception {
+        spans.reset();
+
+        assertThat(get("/api/plant/status").statusCode()).isEqualTo(200);
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> spans.getFinishedSpanItems().stream()
+                .anyMatch(s -> s.getKind() == SpanKind.SERVER && s.getName().contains("/api/plant/status")));
+        tracerProvider.forceFlush().join(5, TimeUnit.SECONDS);
+        SpanData server = spans.getFinishedSpanItems().stream()
+                .filter(s -> s.getKind() == SpanKind.SERVER && s.getName().contains("/api/plant/status"))
+                .findFirst().orElseThrow();
+        assertThat(spans.getFinishedSpanItems())
+                .filteredOn(s -> s.getName().equals("controltower.equipment.call"))
+                .filteredOn(s -> s.getTraceId().equals(server.getTraceId()))
+                .hasSizeGreaterThanOrEqualTo(3);
     }
 
     private SpanData spanNamed(String name) {
