@@ -32,7 +32,7 @@ public class EventController {
 
     @PostMapping("/api/events")
     Mono<ResponseEntity<Void>> receive(@Valid @RequestBody EventRequest e) {
-        return Blocking.call(() -> {
+        return Blocking.runToCompletion(() -> {
             try {
                 ingest.ingest(new EquipmentEvent(e.eventId(), e.equipmentId(), e.code(), e.value(), e.occurredAt()));
             } catch (IllegalArgumentException rejected) {

@@ -24,7 +24,7 @@ public class MaintenanceController {
     @PostMapping("/api/maintenance/{id}/close")
     Mono<ResponseEntity<ApiResult>> close(@PathVariable UUID id, WebSession session) {
         Actor actor = SessionActor.of(session);
-        return Blocking.call(() -> reply(admin.close(id, actor), actor));
+        return Blocking.runToCompletion(() -> reply(admin.close(id, actor), actor));
     }
 
     private static ResponseEntity<ApiResult> reply(boolean closed, Actor actor) {

@@ -23,12 +23,12 @@ public class CommandController {
 
     @PostMapping("/api/commands/{id}/confirm")
     Mono<ResponseEntity<ApiResult>> confirm(@PathVariable UUID id, WebSession session) {
-        return Blocking.call(() -> reply(decide.confirm(id, SessionActor.of(session))));
+        return Blocking.runToCompletion(() -> reply(decide.confirm(id, SessionActor.of(session))));
     }
 
     @PostMapping("/api/commands/{id}/reject")
     Mono<ResponseEntity<ApiResult>> reject(@PathVariable UUID id, WebSession session) {
-        return Blocking.call(() -> reply(decide.reject(id, SessionActor.of(session))));
+        return Blocking.runToCompletion(() -> reply(decide.reject(id, SessionActor.of(session))));
     }
 
     // FORBIDDEN과 NOT_FOUND는 status가 null이다.
