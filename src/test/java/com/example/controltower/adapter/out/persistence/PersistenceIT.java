@@ -42,6 +42,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
@@ -405,5 +406,18 @@ class PersistenceIT {
         new ResourceDatabasePopulator(new ClassPathResource("schema-control.sql")).execute(dataSource);
 
         assertThat(events.since(T0)).containsExactly(event);
+    }
+
+    // 수신 검증을 거치지 않은 행이 감지와 화면에 장치 원문을 흘리지 않게 DB도 같은 형식만 받는다.
+    @Test
+    void eventCodeOutsideTheIngestPattern_isRejectedByTheDatabase() {
+        String insert = "insert into equipment_events (event_id, equipment_id, code, occurred_at) values (?, 'CV-1', ?, now())";
+        jdbc.update(insert, "ok", "CONVEYOR_STOPPED");
+
+        for (String code : List.of("stopped", "1STOP", "STOP-1", "A".repeat(41), "")) {
+            assertThatThrownBy(() -> jdbc.update(insert, "bad-" + code, code))
+                    .as(code)
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
     }
 }
