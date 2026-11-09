@@ -80,7 +80,7 @@ public class InMemoryPendingCommands implements PendingCommands {
             return false;
         }
         if (to == CommandStatus.EXECUTING && commands.values().stream()
-                .anyMatch(o -> o.status() == CommandStatus.EXECUTING && o.spec().targetId().equals(c.spec().targetId()))) {
+                .anyMatch(o -> o.status() == CommandStatus.EXECUTING && o.spec().lockKey().equals(c.spec().lockKey()))) {
             return false;
         }
         commands.put(id, withStatus(c, to));

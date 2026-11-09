@@ -17,6 +17,9 @@ public sealed interface CommandSpec {
     /** 같은 대상의 살아 있는 카드를 찾는 키다. 두 설비가 걸리면 원본 쪽이다. */
     String targetId();
 
+    /** 동시에 하나만 실행하는 단위다. 우회는 모두 분류기 하나를, 재배정은 로봇 배차 하나를 거친다. */
+    String lockKey();
+
     record Restart(String conveyorId) implements CommandSpec {
         public Restart {
             requireNonNull(conveyorId);
@@ -29,6 +32,11 @@ public sealed interface CommandSpec {
 
         @Override
         public String targetId() {
+            return conveyorId;
+        }
+
+        @Override
+        public String lockKey() {
             return conveyorId;
         }
     }
@@ -48,6 +56,11 @@ public sealed interface CommandSpec {
         public String targetId() {
             return fromChute;
         }
+
+        @Override
+        public String lockKey() {
+            return "SR-1";
+        }
     }
 
     record Reassign(String fromRobot, String toRobot) implements CommandSpec {
@@ -65,6 +78,11 @@ public sealed interface CommandSpec {
         public String targetId() {
             return fromRobot;
         }
+
+        @Override
+        public String lockKey() {
+            return "AMR-FLEET";
+        }
     }
 
     record Maintenance(String equipmentId, String summary) implements CommandSpec {
@@ -80,6 +98,11 @@ public sealed interface CommandSpec {
 
         @Override
         public String targetId() {
+            return equipmentId;
+        }
+
+        @Override
+        public String lockKey() {
             return equipmentId;
         }
     }
