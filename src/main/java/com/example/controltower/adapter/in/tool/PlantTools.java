@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
@@ -36,7 +37,10 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
 import org.springframework.ai.util.json.JsonParser;
 
-/** 도구는 예외를 던지지 않는다. 제안 도구는 대기 카드만 만들고, 계정은 인자가 아니라 TurnScope에서 읽는다. */
+/**
+ * 도구는 예외를 던지지 않는다. 제안 도구는 대기 카드만 만들고, 계정은 인자가 아니라 TurnScope에서 읽는다.
+ * 조회 도구는 TurnScope 없이도 돈다. MCP 어댑터가 같은 조회 도구를 쓴다.
+ */
 public class PlantTools {
 
     private static final Logger log = LoggerFactory.getLogger(PlantTools.class);
@@ -88,12 +92,12 @@ public class PlantTools {
 
     @Tool(description = "라인 전체 설비 상태와 열린 장애 건, 열린 정비 요청을 조회한다.")
     public ToolResults getPlantStatus(ToolContext ctx) {
-        return run(ctx, scope -> new Ok(StatusView.of(status.snapshot())));
+        return read(() -> new Ok(StatusView.of(status.snapshot())));
     }
 
     @Tool(description = "설비 하나의 현재 상태를 조회한다.")
     public ToolResults getEquipment(@ToolParam(description = "설비 ID. 예: CV-3, CH-03, AMR-01, SR-1, SC-1") String id, ToolContext ctx) {
-        return run(ctx, scope -> !topology.contains(id)
+        return read(() -> !topology.contains(id)
                 ? NOT_FOUND
                 : status.equipment(id).<ToolResults>map(Ok::new).orElse(NOT_FOUND));
     }
@@ -103,7 +107,7 @@ public class PlantTools {
             @ToolParam(description = "설비 ID") String equipmentId,
             @ToolParam(description = "조회할 최근 분 수. 1~120, 생략하면 30", required = false) Integer minutes,
             ToolContext ctx) {
-        return run(ctx, scope -> !topology.contains(equipmentId)
+        return read(() -> !topology.contains(equipmentId)
                 ? NOT_FOUND
                 : new Ok(status.timeline(equipmentId, minutes == null ? DEFAULT_MINUTES : minutes).stream()
                         .map(EventView::of)
@@ -112,7 +116,7 @@ public class PlantTools {
 
     @Tool(description = "이벤트 순서로 추정한 원인 후보 설비와 근거 이벤트를 조회한다. 확정된 원인이 아니라 후보다.")
     public ToolResults diagnose(@ToolParam(description = "증상이 보이는 설비 ID") String equipmentId, ToolContext ctx) {
-        return run(ctx, scope -> !topology.contains(equipmentId)
+        return read(() -> !topology.contains(equipmentId)
                 ? NOT_FOUND
                 : new Ok(status.diagnose(equipmentId).map(DiagnosisView::of).orElse(DiagnosisView.NONE)));
     }
@@ -159,8 +163,12 @@ public class PlantTools {
         if (ctx == null || !(ctx.getContext().get(TurnScope.KEY) instanceof TurnScope scope)) {
             return UNAVAILABLE;
         }
+        return read(() -> body.apply(scope));
+    }
+
+    private static ToolResults read(Supplier<ToolResults> body) {
         try {
-            return body.apply(scope);
+            return body.get();
         } catch (RuntimeException e) {
             log.warn("tool call failed: {}", e.getClass().getName());
             return UNAVAILABLE;

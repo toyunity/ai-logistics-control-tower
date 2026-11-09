@@ -185,6 +185,14 @@
 - **이유:** 모델이 형식이 틀린 인자를 보내면 Spring AI 기본 처리가 그 값을 담은 예외 문구를 도구 결과로 돌려주고 WARN 로그에도 남겼습니다(실행으로 확인). 고정 결과를 돌려주는 `ToolExecutionExceptionProcessor`를 두고 `MethodToolCallback` 로그 레벨을 ERROR로 올렸습니다. 모델이 없는 도구 이름을 부르면 `DefaultToolCallingManager`가 그 이름을 WARN으로 남기므로 이 클래스도 ERROR로 올렸습니다. 같은 실패를 `MessageAggregator`가 예외 문구째 ERROR로 남겨 이 로거는 껐습니다. 끄자 느린 스택 로그에 가려 있던 경쟁이 드러나 오류 직전 청크가 사라졌습니다(`ChatStreamIT` 3회 연속 실패). `SpringAiAssistant`의 `concatMapIterable`이 오류를 받으면 대기 중인 청크를 버리기 때문이라 `concatMapDelayError`로 바꿨습니다. 그리고 스트림 실패와 확정 실패 로그는 예외 클래스 이름만 남깁니다(`ToolLoopTest`, `DecideCommandServiceTest`에서 출력 캡처로 확인).
 - **대가:** 이 클래스들의 다른 진단도 보이지 않고, 예기치 못한 실패 로그에 스택과 문구가 없어 원인 추적은 클래스 이름과 카드 ID로 해야 합니다.
 
+### MCP는 조회 도구 네 개만, 기본은 꺼 두고 토큰으로 막는다
+
+- **이유:** 외부 에이전트가 현황을 직접 물을 수 있게 MCP 서버(`spring-ai-starter-mcp-server-webflux`, Streamable HTTP, `/mcp`)를 붙였습니다. 여는 도구는 `getPlantStatus`, `getEquipment`, `getTimeline`, `diagnose`뿐입니다. 제안 도구를 열지 않는 이유는 MCP 클라이언트에 화면 세션 같은 신원이 없어서입니다. 카드 주인을 정할 수 없으면 "AI는 제안만, 확정은 사람이 화면에서"라는 흐름이 성립하지 않습니다(카드를 만든 사람과 확정하는 사람을 이을 수 없음).
+- **구현:** 조회 도구는 채팅과 같은 `PlantTools` 메서드를 씁니다. 조회는 `TurnScope` 없이도 돌게 바꿨고, 제안은 여전히 `TurnScope`가 없으면 `UNAVAILABLE`입니다. `adapter.in.mcp.McpReadTools`가 이름 허용 목록으로 네 개만 골라 등록하고, 하나라도 빠지면 기동이 실패합니다. Spring AI의 자동 변환(`spring.ai.mcp.server.tool-callback-converter`)은 모든 `ToolCallbackProvider` 빈을 MCP에 여므로 껐습니다. 켜 두면 채팅용 제안 도구까지 열립니다(코드 읽기로 확인, 끈 뒤 목록이 정확히 네 개인 것을 `McpServerIT`로 확인).
+- **오류 형식:** `McpToolUtils`는 도구 예외 문구를 그대로 클라이언트에 돌려주고, SDK의 입력 스키마 검사는 검증기 문구(JVM 로캘에 따라 한국어로도 나옴)를 돌려줍니다(실행으로 확인). 스키마 검사를 끄고(`validateToolInputs(false)`) 예외는 채팅과 같은 `ToolExecutionExceptionProcessor`로 보내 `INVALID_ARGUMENT`/`UNAVAILABLE` 고정 결과만 나갑니다(`McpServerIT`).
+- **인증:** `controltower.mcp.enabled=false`가 기본이고, 이때는 MCP 서버 빈과 `/mcp` 경로가 없습니다(`spring.ai.mcp.server.enabled`를 같은 값에 묶음, `ContextLoadsIT`). 켜면 `MCP_TOKEN`이 비어 있을 때 기동이 실패하고, `/mcp`와 그 하위 경로는 `Authorization: Bearer <토큰>`이 맞아야 통과합니다. 비교는 SHA-256 해시끼리 상수 시간으로 하고, 실패는 고정 본문의 401입니다. 토큰과 헤더는 로그에 남기지 않습니다(`McpServerIT` 출력 캡처).
+- **대가:** 토큰 하나를 모든 MCP 클라이언트가 나눠 씁니다. 누가 물었는지 구분하지 못하고, 토큰이 새면 바꾸고 재기동해야 합니다. 호출 수 제한도 없어 조회가 몰리면 설비 게이트웨이 부하가 그대로 늘어납니다(서킷 브레이커가 막는 것은 장애 뒤뿐입니다). 채팅의 한 턴 8회 한도도 MCP에는 적용되지 않습니다. 실제 MCP 클라이언트 앱과의 연결은 확인하지 않았고, MCP Java SDK 클라이언트로만 확인했습니다.
+
 ## 보안과 설정
 
 ### 사용자 입력을 로그에 남기지 않음

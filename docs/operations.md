@@ -56,6 +56,31 @@ Docker가 필요하고 비용은 들지 않습니다. `*IT`는 Docker가 없으�
 docker compose exec db psql -U consult -d consult -c 'DROP TABLE vector_store;'
 ```
 
+## MCP로 조회 연결
+
+외부 에이전트가 현황을 조회하도록 MCP 서버를 켤 수 있습니다. 조회 도구 네 개(`getPlantStatus`, `getEquipment`, `getTimeline`, `diagnose`)만 열리고 제안·확정은 열리지 않습니다. 결과는 채팅 도구와 같은 고정 형식입니다. 기본은 꺼져 있습니다.
+
+```bash
+export MCP_TOKEN=$(openssl rand -hex 32)
+./gradlew bootRun --args='--controltower.mcp.enabled=true'   # MCP_TOKEN이 없으면 기동 실패
+```
+
+엔드포인트는 `http://<호스트>:8080/mcp`(Streamable HTTP)이고, 모든 요청에 `Authorization: Bearer <MCP_TOKEN>`이 필요합니다. 토큰이 없거나 틀리면 401입니다. HTTP 원격 서버와 헤더를 지원하는 MCP 클라이언트라면 대체로 아래 형태로 등록합니다(클라이언트마다 키 이름이 다를 수 있습니다). 이 설정은 MCP Java SDK 클라이언트로만 확인했고, 데스크톱·CLI 클라이언트 앱에서는 확인하지 않았습니다.
+
+```json
+{
+  "mcpServers": {
+    "control-tower": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer <MCP_TOKEN>" }
+    }
+  }
+}
+```
+
+토큰 하나를 모든 클라이언트가 나눠 쓰고 호출 수 제한이 없습니다. 사내망 밖에 열지 않습니다. 평문 HTTP에서는 토큰이 그대로 보이므로 사내망 밖이면 TLS 뒤에 둡니다.
+
 ## 한계
 
 운영 환경에 투입할 수준으로 검증된 프로젝트가 아닙니다.

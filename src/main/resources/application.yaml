@@ -31,6 +31,11 @@ spring:
       id-type: TEXT                 # 기본값 UUID이면 "refund-policy" 같은 ID가 실패한다
       dimensions: 1536
     chat.memory.repository.jdbc.initialize-schema: always
+    mcp.server:
+      enabled: ${controltower.mcp.enabled}   # 끄면 MCP 서버 빈과 /mcp 경로가 아예 없다
+      name: control-tower
+      protocol: STREAMABLE           # 엔드포인트는 기본값 /mcp(streamable-http.mcp-endpoint)
+      tool-callback-converter: false # 켜면 모든 ToolCallbackProvider(채팅의 제안 도구 포함)를 MCP에 연다. 조회 도구는 McpConfig가 직접 등록한다
     chat.client.tool-calling.advisor-order: 20   # 기본값은 메모리(0)와 RAG(10) 바깥이라 도구 반복마다 검색과 재작성이 다시 돈다
 server.reactive.session.cookie.same-site: lax   # 다른 사이트에서 보낸 확정 POST에 세션 쿠키가 실리지 않게 한다. WebFlux 기본값도 Lax지만 의도를 고정한다
 logging.level.org.springframework.ai.tool.method.MethodToolCallback: ERROR   # 인자 변환 실패 WARN이 모델이 보낸 인자 값을 그대로 남긴다
@@ -51,6 +56,9 @@ controltower:
     failure-rate-threshold: 50        # %. 연결 실패, 타임아웃, 5xx만 센다. 4xx는 기기가 답한 것이라 세지 않는다
     wait-in-open-state: 10s           # 이 동안은 설비가 회복돼도 UNKNOWN이고 명령은 보내지 않는다. 감지 주기(5초) 두 번
     half-open-calls: 3                # 회복됐으면 컨베이어 조회 한 번(3건)으로 끝난다. 아직 죽어 있으면 남은 시험 호출을 다음 조회들이 타임아웃(3초)씩 쓰며 소모한다
+  mcp:
+    enabled: false                  # 켜면 /mcp에서 조회 도구 네 개를 MCP로 연다. 제안 도구는 열지 않는다
+    token: ${MCP_TOKEN:}             # 켰는데 비어 있으면 기동이 실패한다. Authorization: Bearer <토큰>
   simulator:
     enabled: true
     event-target: ""                # 비우면 실행 중인 서버 자신의 포트로 보낸다
