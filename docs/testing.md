@@ -13,10 +13,10 @@
 | 대화와 도구 | `AssistantPipelineTest`, `ToolLoopTest`, `PlantToolsTest`, `DemoIntentTest`, `DemoEmbeddingModelTest` | 가짜 모델 | 이벤트 순서, `action` 위치, 도구 반복, 잘못된 ID와 인자, 도구 한도, 데모 검색 순위 |
 | 웹 슬라이스 | `ChatControllerTest`, `CommandControllerTest`, `PlantControllerTest`, `EventControllerTest`, `MaintenanceControllerTest`, `KnowledgeControllerTest` | MockMvc | 응답 코드표, 권한(참관자, 다른 운영자, 세션 없음), 로그와 본문에 입력이 남지 않음 |
 | 구조 | `ArchitectureTest` | ArchUnit | 의존 방향, 도구 어댑터는 입력 포트만 호출 |
-| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개 |
-| 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 승자 하나, 이벤트 전송 |
+| 설정 | `ApiKeyGuardTest`, `ContextLoadsIT`, `ToolExceptionProcessorTest`, `DetectionThreadsTest` | 실제 설정 파일 | 키 누락 시 기동 실패, 포트마다 빈 1개, 도구 예외의 고정 결과와 클래스 이름만 남는 로그, 종료 시 감지 스레드 정리 |
+| 통합 | `ChatStreamIT`, `KnowledgeSyncIT`, `PersistenceIT`, `SimulatorPushIT`, `StaleCommandCleanupIT` | 실제 HTTP, PostgreSQL 컨테이너 | 증분 전달, 대화 저장, 문서 동기화, 동시 확정 시 승자 하나, 이벤트 전송, 웹 서버 시작 전 기동 정리 |
 | 전체 흐름 | `ControlApiIT`, `DemoModeIT` | 시뮬레이터, PostgreSQL, 실제 HTTP | 우회 확정 뒤 시뮬레이터 변화, 막힘 중 재가동 409, 상태가 바뀐 카드 409, 장애 건 열림과 닫힘, 키 없는 데모 장면 |
-| 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변 |
+| 속은 모델 | `FooledModelIT` | 모든 설비에 모든 제안 도구를 부르는 가짜 모델 | 설비 전송 0건, 정비 건 0건, 시뮬레이터 상태 불변, 참관자와 익명은 모든 제안이 권한 없음 |
 | SDK 경계 | `RealBeansStubIT` | 실제 SDK 빈, 로컬 HTTP 스텁 | 나가는 요청의 모델, 옵션, 도구 스키마 8개, 계정 정보 없음, 2회차 요청의 도구 결과 |
 | 실제 API | `LiveApiIT` | 실제 Claude, OpenAI | 요청 수락, 도구 선택, 인젝션 문장에 전송 0건, 검색 품질 표 |
 
