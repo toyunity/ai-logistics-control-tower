@@ -145,6 +145,18 @@ class PersistenceIT {
                 .isEqualTo(1);
     }
 
+    @Test
+    void concurrentConfirmOfDivertsToOneDestination_oneWins() throws Exception {
+        PendingCommand fromCh03 = saved("op-1", new CommandSpec.Divert("CH-03", "CH-04"));
+        PendingCommand fromCh01 = saved("op-2", new CommandSpec.Divert("CH-01", "CH-04"));
+
+        assertThat(claimConcurrently(List.of(fromCh03, fromCh01))).containsOnlyOnce(true);
+
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from pending_commands where status = 'EXECUTING'", Long.class))
+                .isEqualTo(1);
+    }
+
     private List<Boolean> claimConcurrently(List<PendingCommand> cards) throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         List<Future<Boolean>> claims = new ArrayList<>();
