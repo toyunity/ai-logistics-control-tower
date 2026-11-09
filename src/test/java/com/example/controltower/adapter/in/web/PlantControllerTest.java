@@ -16,6 +16,8 @@ import com.example.controltower.support.InMemoryMaintenanceDesk;
 import com.example.controltower.support.InMemoryRobotFleet;
 import com.example.controltower.support.InMemorySorters;
 import com.sun.net.httpserver.HttpServer;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
@@ -117,6 +119,11 @@ class PlantControllerTest {
     static class Wiring {
 
         @Bean
+        CircuitBreakerRegistry breakers() {
+            return CircuitBreakerRegistry.ofDefaults();
+        }
+
+        @Bean
         FailingIncidents incidents() {
             return new FailingIncidents();
         }
@@ -144,6 +151,7 @@ class PlantControllerTest {
                 .get().uri("/api/plant/status").exchange().expectStatus().isEqualTo(code).expectBody();
     }
     @Autowired FailingIncidents incidents;
+    @Autowired CircuitBreakerRegistry breakers;
 
     @Value("${controltower.equipment.read-timeout:3s}")
     Duration readTimeout;
@@ -154,6 +162,8 @@ class PlantControllerTest {
         release.countDown();
         release = new CountDownLatch(1);
         incidents.failing = false;
+        // 앞 테스트의 무응답이 회로를 열면 뒤 테스트가 설비에 닿지 못한다.
+        breakers.getAllCircuitBreakers().forEach(CircuitBreaker::reset);
     }
 
     @AfterAll

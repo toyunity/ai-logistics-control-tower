@@ -6,8 +6,17 @@ import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.SlidingWindowType;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
@@ -28,6 +37,22 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 class EquipmentHttp {
 
+    private static final Logger log = LoggerFactory.getLogger(EquipmentHttp.class);
+
+    /** 회로 단위. 게이트웨이가 죽으면 읽기와 명령 전송이 함께 죽으므로 둘이 한 회로를 쓴다. */
+    enum Group {
+        CONVEYORS("conveyors"),
+        SORTER("sorter"),
+        ROBOTS("robots"),
+        SAFETY_PLC("safety-plc");
+
+        final String breaker;
+
+        Group(String breaker) {
+            this.breaker = breaker;
+        }
+    }
+
     // 빠진 값이나 어긋난 타입이 0으로 읽히면 안전 판단이 정상으로 기운다. 제조사가 필드를 더하는 것은 허용한다.
     // 한계: 실수 필드는 문자열 "NaN"과 "Infinity"를 받으므로 범위는 어댑터가 따로 검사한다.
     private static final JsonMapper STRICT = JsonMapper.builder()
@@ -43,12 +68,35 @@ class EquipmentHttp {
 
     private final Environment env;
     private final RestClient client;
+    private final Map<Group, CircuitBreaker> breakers = new EnumMap<>(Group.class);
 
+    @Autowired
     EquipmentHttp(
             Environment env,
             @Value("${controltower.equipment.connect-timeout:2s}") Duration connectTimeout,
-            @Value("${controltower.equipment.read-timeout:3s}") Duration readTimeout) {
+            @Value("${controltower.equipment.read-timeout:3s}") Duration readTimeout,
+            CircuitBreakerRegistry registry,
+            @Value("${controltower.equipment.circuit-breaker.sliding-window-size}") int window,
+            @Value("${controltower.equipment.circuit-breaker.failure-rate-threshold}") float failureRate,
+            @Value("${controltower.equipment.circuit-breaker.wait-in-open-state}") Duration openWait,
+            @Value("${controltower.equipment.circuit-breaker.half-open-calls}") int halfOpenCalls) {
+        this(env, connectTimeout, readTimeout, registry, breakerConfig(window, failureRate, openWait, halfOpenCalls));
+    }
+
+    EquipmentHttp(
+            Environment env,
+            Duration connectTimeout,
+            Duration readTimeout,
+            CircuitBreakerRegistry registry,
+            CircuitBreakerConfig breakerConfig) {
         this.env = env;
+        for (Group group : Group.values()) {
+            CircuitBreaker breaker = registry.circuitBreaker(group.breaker, breakerConfig);
+            // 이벤트 문자열에는 예외 문구가 들어갈 수 있어 이름과 상태만 남긴다.
+            breaker.getEventPublisher().onStateTransition(e -> log.warn(
+                    "equipment circuit {} -> {}", e.getCircuitBreakerName(), e.getStateTransition().getToState()));
+            breakers.put(group, breaker);
+        }
         SimpleClientHttpRequestFactory timeouts = new SimpleClientHttpRequestFactory();
         timeouts.setConnectTimeout(connectTimeout);
         timeouts.setReadTimeout(readTimeout);
@@ -56,7 +104,7 @@ class EquipmentHttp {
     }
 
     /** 번역까지 여기서 감싸므로 도메인 레코드의 검증 실패도 게이트웨이 장애가 된다. 값은 URI 템플릿으로 넣어 경로를 벗어나지 못한다. */
-    <T, R> R read(String path, Class<T> wire, Function<T, R> translate, Object... uriVariables) {
+    <T, R> R read(Group group, String path, Class<T> wire, Function<T, R> translate, Object... uriVariables) {
         try {
             String json = client.get().uri(url(path, uriVariables), uriVariables).retrieve().body(String.class);
             return translate.apply(STRICT.readValue(json, wire));
@@ -65,7 +113,7 @@ class EquipmentHttp {
         }
     }
 
-    void send(String path, Object body, Object... uriVariables) {
+    void send(Group group, String path, Object body, Object... uriVariables) {
         String url = url(path, uriVariables);
         boolean succeeded;
         try {
@@ -92,6 +140,20 @@ class EquipmentHttp {
         if (!succeeded) {
             throw unavailable();
         }
+    }
+
+    /**
+     * 응답이 없거나 5xx일 때만 실패로 센다. 4xx, 3xx, 형식이 어긋난 본문은 게이트웨이가 답한 것이라 세지 않는다.
+     * 최소 호출 수를 윈도 크기와 같게 둬야 기동 직후 몇 건의 실패로 열리지 않는다.
+     */
+    static CircuitBreakerConfig breakerConfig(int window, float failureRate, Duration openWait, int halfOpenCalls) {
+        return CircuitBreakerConfig.custom()
+                .slidingWindow(window, window, SlidingWindowType.COUNT_BASED)
+                .failureRateThreshold(failureRate)
+                .waitDurationInOpenState(openWait)
+                .permittedNumberOfCallsInHalfOpenState(halfOpenCalls)
+                .recordException(e -> e instanceof ResourceAccessException || e instanceof HttpServerErrorException)
+                .build();
     }
 
     /**

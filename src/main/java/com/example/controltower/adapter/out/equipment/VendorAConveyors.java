@@ -28,7 +28,7 @@ public class VendorAConveyors implements Conveyors {
 
     @Override
     public ConveyorStatus get(String id) {
-        return http.read(PLC, Registers.class, wire -> translate(id, wire.registers()), id);
+        return http.read(EquipmentHttp.Group.CONVEYORS, PLC, Registers.class, wire -> translate(id, wire.registers()), id);
     }
 
     @Override
@@ -38,7 +38,7 @@ public class VendorAConveyors implements Conveyors {
 
     @Override
     public void restart(UUID commandId, String id) {
-        http.send(PLC + "/command", new Command(commandId, OP_START), id);
+        http.send(EquipmentHttp.Group.CONVEYORS, PLC + "/command", new Command(commandId, OP_START), id);
     }
 
     private static ConveyorStatus translate(String id, int[] registers) {

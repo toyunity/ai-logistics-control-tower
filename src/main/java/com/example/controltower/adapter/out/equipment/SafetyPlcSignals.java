@@ -20,6 +20,7 @@ public class SafetyPlcSignals implements SafetySignals {
     @Override
     public SafetyStatus read(String zone) {
         return http.read(
+                EquipmentHttp.Group.SAFETY_PLC,
                 "/sim/safety/zones/{zone}",
                 Zone.class,
                 wire -> new SafetyStatus(zone, flag(wire.estop()), flag(wire.presence()), Instant.ofEpochMilli(wire.ts())),

@@ -25,6 +25,7 @@ public class FleetRobots implements RobotFleet {
     @Override
     public List<RobotStatus> all() {
         return http.read(
+                EquipmentHttp.Group.ROBOTS,
                 "/sim/fleet/robots",
                 Robot[].class,
                 robots -> Arrays.stream(robots).map(FleetRobots::translate).toList());
@@ -32,7 +33,7 @@ public class FleetRobots implements RobotFleet {
 
     @Override
     public void reassign(UUID commandId, String fromRobot, String toRobot) {
-        http.send("/sim/fleet/reassign", new Reassign(commandId, fromRobot, toRobot));
+        http.send(EquipmentHttp.Group.ROBOTS, "/sim/fleet/reassign", new Reassign(commandId, fromRobot, toRobot));
     }
 
     private static RobotStatus translate(Robot robot) {
